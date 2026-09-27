@@ -38,6 +38,10 @@ public class ProjectService {
         if (in.getName() != null) p.setName(in.getName());
         if (in.getType() != null) p.setType(in.getType());
         if (in.getRepoUrl() != null) p.setRepoUrl(in.getRepoUrl());
+        // 空串表示清除凭据（转公开仓库）
+        if (in.getGitCredentialId() != null) {
+            p.setGitCredentialId(in.getGitCredentialId().isBlank() ? null : in.getGitCredentialId());
+        }
         if (in.getDefaultBranch() != null) p.setDefaultBranch(in.getDefaultBranch());
         if (in.getStack() != null) p.setStack(in.getStack());
         if (in.getBuildConfig() != null) p.setBuildConfig(in.getBuildConfig());

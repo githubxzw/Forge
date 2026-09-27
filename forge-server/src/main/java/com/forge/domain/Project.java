@@ -30,6 +30,9 @@ public class Project {
     @Column(nullable = false, length = 512)
     private String repoUrl;
 
+    /** 私有仓库凭据（SSH_KEY 或 存 token 的 PASSWORD/TEXT），空=公开仓库 */
+    private String gitCredentialId;
+
     private String defaultBranch;
 
     /** 技术栈描述，如 vue/npm、maven */

@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h2>环境管理</h2>
-        <p class="desc">SSH 裸机 / Docker 主机 / K8s 集群的统一接入</p>
+        <p class="desc">云服务器（SSH）/ Docker 主机 / K8s 集群的统一接入</p>
       </div>
       <div class="actions">
         <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建环境</el-button>
@@ -31,7 +31,7 @@
           <el-col :span="12">
             <el-form-item label="类型">
               <el-select v-model="form.kind" style="width: 100%" :disabled="!!form.id">
-                <el-option label="SSH 裸机" value="SSH" />
+                <el-option label="云服务器（SSH）" value="SSH" />
                 <el-option label="Docker 主机" value="DOCKER" />
                 <el-option label="K8s 集群" value="K8S" />
               </el-select>

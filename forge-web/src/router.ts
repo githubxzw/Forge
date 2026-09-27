@@ -18,7 +18,8 @@ const router = createRouter({
         { path: 'environments', component: () => import('./views/Environments.vue'), meta: { title: '环境管理' } },
         { path: 'credentials', component: () => import('./views/Credentials.vue'), meta: { title: '凭据管理' } },
         { path: 'deployments', component: () => import('./views/DeployCenter.vue'), meta: { title: '部署中心' } },
-        { path: 'settings', component: () => import('./views/Settings.vue'), meta: { title: '系统设置' } }
+        { path: 'settings', component: () => import('./views/Settings.vue'), meta: { title: '系统设置' } },
+        { path: 'manual', component: () => import('./views/Manual.vue'), meta: { title: '使用手册' } }
       ]
     },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' }

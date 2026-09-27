@@ -22,9 +22,10 @@
       <el-table-column prop="stack" label="技术栈" width="120" />
       <el-table-column prop="repoUrl" label="仓库" min-width="240" show-overflow-tooltip />
       <el-table-column prop="defaultBranch" label="默认分支" width="100" />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="210" fixed="right">
         <template #="{ row }">
           <el-button size="small" @click="$router.push(`/projects/${row.id}`)">详情</el-button>
+          <el-button size="small" type="primary" plain @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -48,10 +49,17 @@
           </el-col>
           <el-col :span="12"><el-form-item label="默认分支"><el-input v-model="form.defaultBranch" placeholder="main" /></el-form-item></el-col>
         </el-row>
-        <el-form-item label="Git 仓库"><el-input v-model="form.repoUrl" placeholder="https://github.com/you/repo.git" /></el-form-item>
-        <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="技术栈"><el-input v-model="form.stack" placeholder="vue/npm 或 maven" /></el-form-item></el-col>
-        </el-row>
+        <el-divider content-position="left">代码仓库</el-divider>
+        <el-form-item label="Git 地址">
+          <el-input v-model="form.repoUrl" placeholder="https://github.com/you/repo.git" />
+          <div class="muted">支持 GitHub / GitLab / Gitee 的 HTTPS 或 SSH 地址，也支持构建机本地路径（如 /opt/repos/demo）</div>
+        </el-form-item>
+        <el-form-item label="拉取凭据">
+          <el-select v-model="form.gitCredentialId" clearable placeholder="公开仓库无需选择" style="width: 100%">
+            <el-option v-for="c in creds" :key="c.id" :label="`${c.name}（${credKindLabel(c.kind)}）`" :value="c.id" />
+          </el-select>
+          <div class="muted">私有仓库请先在「凭据管理」创建：HTTPS + Token 用「文本」（存 token）；SSH 地址用「SSH 私钥」</div>
+        </el-form-item>
         <el-divider content-position="left">构建配置（可选）</el-divider>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="构建命令"><el-input v-model="buildCommand" placeholder="默认按技术栈自动" /></el-form-item></el-col>
@@ -81,12 +89,15 @@
 import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listProjects, createProject, updateProject, deleteProject } from '../api/api'
+import { listProjects, createProject, updateProject, deleteProject, listCredentials } from '../api/api'
 
 const list = ref<any[]>([])
+const creds = ref<any[]>([])
 const loading = ref(false)
 const dialog = ref(false)
 const form = ref<any>({})
+
+const credKindLabel = (k: string) => ({ SSH_KEY: 'SSH私钥', PASSWORD: '密码', KUBECONFIG: 'kubeconfig', TEXT: '文本/Token' }[k] || k)
 
 const buildCommand = ref(''); const outputDir = ref(''); const dockerfilePath = ref('')
 const imageName = ref(''); const containerPort = ref(''); const ports = ref(''); const chartPath = ref('')
@@ -97,6 +108,7 @@ const typeLabel = (t: string) => ({ FRONTEND: '前端', BACKEND: '后端', FULL:
 async function load() {
   loading.value = true
   list.value = await listProjects()
+  creds.value = await listCredentials()
   loading.value = false
 }
 

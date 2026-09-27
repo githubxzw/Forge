@@ -1,11 +1,13 @@
 package com.forge.build;
 
 import com.forge.common.ApiException;
+import com.forge.credential.CredentialService;
 import com.forge.domain.Artifact;
 import com.forge.domain.BuildTask;
 import com.forge.domain.BuildTarget;
 import com.forge.domain.Project;
 import com.forge.domain.TaskStatus;
+import com.forge.infra.git.GitAuth;
 import com.forge.infra.log.LogSink;
 import com.forge.infra.process.ProcessRunner;
 import com.forge.infra.process.TaskRegistry;
@@ -41,6 +43,7 @@ public class BuildService {
     private final TaskRegistry taskRegistry;
     private final com.forge.config.ForgeProperties props;
     private final SettingService settingService;
+    private final CredentialService credentialService;
     private final Map<BuildTarget, Builder> builders;
     private final ThreadPoolExecutor buildExecutor;
 
@@ -54,6 +57,7 @@ public class BuildService {
                         TaskRegistry taskRegistry,
                         com.forge.config.ForgeProperties props,
                         SettingService settingService,
+                        CredentialService credentialService,
                         List<Builder> builderList,
                         @Qualifier("buildExecutor") ThreadPoolExecutor buildExecutor) {
         this.buildTaskRepository = buildTaskRepository;
@@ -64,6 +68,7 @@ public class BuildService {
         this.taskRegistry = taskRegistry;
         this.props = props;
         this.settingService = settingService;
+        this.credentialService = credentialService;
         this.builders = new EnumMap<>(BuildTarget.class);
         builderList.forEach(b -> builders.put(b.target(), b));
         this.buildExecutor = buildExecutor;
@@ -118,31 +123,38 @@ public class BuildService {
             Path src = workDir.resolve("src");
             Files.createDirectories(workDir);
 
-            sink.line("[forge] 检出代码: " + project.getRepoUrl() + " @ " + branch);
-            String commit = gitClient.ensureRepo(project.getRepoUrl(), branch, src, sink,
-                    p -> taskRegistry.register(taskId, (java.io.Closeable) () -> ProcessRunner.killTree(p)));
-            requireNotCancelled(taskId);
-            sink.line("[forge] commit: " + commit);
-
-            String version = genVersion(branch, commit);
-            task.setCommit(commit);
-            task.setVersion(version);
-            task = buildTaskRepository.save(task);
-
-            BuildContext ctx = new BuildContext(project, task, workDir, branch, commit, version, sink,
-                    settingService, props.artifactPath());
-            for (BuildTarget target : targets) {
+            sink.line("[forge] 检出代码: " + project.getRepoUrl() + " @ " + branch
+                    + (project.getGitCredentialId() != null && !project.getGitCredentialId().isBlank() ? "（使用 Git 凭据）" : ""));
+            com.forge.domain.Credential gitCred = project.getGitCredentialId() == null
+                    || project.getGitCredentialId().isBlank() ? null
+                    : credentialService.require(project.getGitCredentialId());
+            try (GitAuth gitAuth = gitCred == null ? GitAuth.NONE
+                    : GitAuth.of(gitCred.getKind(), credentialService.data(gitCred), project.getRepoUrl())) {
+                String commit = gitClient.ensureRepo(project.getRepoUrl(), branch, src, sink,
+                        p -> taskRegistry.register(taskId, (java.io.Closeable) () -> ProcessRunner.killTree(p)), gitAuth);
                 requireNotCancelled(taskId);
-                sink.line("");
-                sink.line("[forge] ===== 构建目标: " + target + " =====");
-                Artifact artifact = builders.get(target).build(ctx);
-                artifactService.attachAndSave(artifact, project, task);
-                sink.line("[forge] 制品已入库: " + artifact.getType() + " " + artifact.getVersion());
+                sink.line("[forge] commit: " + commit);
+
+                String version = genVersion(branch, commit);
+                task.setCommit(commit);
+                task.setVersion(version);
+                task = buildTaskRepository.save(task);
+
+                BuildContext ctx = new BuildContext(project, task, workDir, branch, commit, version, sink,
+                        settingService, props.artifactPath());
+                for (BuildTarget target : targets) {
+                    requireNotCancelled(taskId);
+                    sink.line("");
+                    sink.line("[forge] ===== 构建目标: " + target + " =====");
+                    Artifact artifact = builders.get(target).build(ctx);
+                    artifactService.attachAndSave(artifact, project, task);
+                    sink.line("[forge] 制品已入库: " + artifact.getType() + " " + artifact.getVersion());
+                }
             }
 
             task.setStatus(TaskStatus.SUCCESS);
             sink.line("");
-            sink.line("[forge] 构建成功，版本: " + version);
+            sink.line("[forge] 构建成功，版本: " + task.getVersion());
             TarUtils.deleteDir(workDir); // 成功后清理工作目录
         } catch (Exception e) {
             boolean wasCancelled = cancelled.remove(taskId);

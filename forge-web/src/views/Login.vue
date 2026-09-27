@@ -23,7 +23,7 @@
         <el-button type="primary" size="large" style="width: 100%; height: 42px; font-weight: 600"
                    :loading="loading" @click="doLogin">登 录</el-button>
       </el-form>
-      <div class="tip">默认账号 admin / admin123</div>
+      <div class="tip">默认账号 admin / admin123 · 首次登录后请修改密码</div>
     </el-card>
   </div>
 </template>
