@@ -33,6 +33,10 @@ public class JwtService {
                     bytes = new byte[48];
                     new SecureRandom().nextBytes(bytes);
                     java.nio.file.Files.writeString(keyFile, Base64.getEncoder().encodeToString(bytes));
+                    try {
+                        java.nio.file.Files.setPosixFilePermissions(keyFile,
+                                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+                    } catch (UnsupportedOperationException ignore) {}
                 }
             }
         } catch (Exception e) {

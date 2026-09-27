@@ -10,6 +10,26 @@
       <el-button type="primary" :icon="VideoPlay" @click="buildDialog = true">发起构建</el-button>
     </div>
 
+    <el-card shadow="never" style="margin-bottom: 14px">
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
+        <b>⚡ Webhook 自动构建</b>
+        <span class="mono muted">{{ webhookUrl }}</span>
+        <el-button size="small" @click="copyText(webhookUrl)">复制地址</el-button>
+        <template v-if="p.webhookSecret">
+          <span class="mono muted">secret: {{ p.webhookSecret }}</span>
+          <el-button size="small" @click="copyText(p.webhookSecret)">复制密钥</el-button>
+        </template>
+        <span style="flex: 1"></span>
+        <el-button size="small" type="warning" plain @click="regenSecret">
+          {{ p.webhookSecret ? '重新生成密钥' : '生成密钥' }}
+        </el-button>
+      </div>
+      <div class="muted" style="margin-top: 6px" v-if="p.webhookSecret">
+        在 GitHub / Gitee / GitLab 仓库 Settings → Webhooks 中添加该地址，Content-Type 选 application/json，
+        Secret 填上面的密钥；push 到默认分支即自动构建（同分支有进行中的构建会自动跳过）。
+      </div>
+    </el-card>
+
     <el-tabs v-model="tab">
       <el-tab-pane label="构建任务" name="builds">
         <el-table :data="builds" size="small">
@@ -71,13 +91,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Back, VideoPlay } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
-import { getProject, listBuilds, listArtifacts, listDeployments, startBuild } from '../api/api'
+import { getProject, listBuilds, listArtifacts, listDeployments, startBuild, regenerateWebhookSecret } from '../api/api'
 import StatusTag from '../components/StatusTag.vue'
+
+const webhookUrl = computed(() => `${location.origin}/api/webhook/${p.value.code || ''}`)
+
+function copyText(t: string) {
+  navigator.clipboard?.writeText(t)
+  ElMessage.success('已复制')
+}
+
+async function regenSecret() {
+  await ElMessageBox.confirm('重新生成后旧 Webhook 立即失效，确认？', '提示', { type: 'warning' })
+  const s = await regenerateWebhookSecret(id)
+  p.value.webhookSecret = s
+  ElMessage.success('已重新生成')
+}
 
 const route = useRoute()
 const id = route.params.id as string

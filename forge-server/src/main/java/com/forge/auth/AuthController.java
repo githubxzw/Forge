@@ -22,6 +22,11 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
+    /** 登录防爆破：同一用户名连续失败 5 次锁定 10 分钟（内存态，重启即清零） */
+    private static final int MAX_ATTEMPTS = 5;
+    private static final long LOCK_MS = 10 * 60 * 1000L;
+    private static final java.util.Map<String, long[]> ATTEMPTS = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Data
     public static class LoginReq {
         @NotBlank private String username;
@@ -30,12 +35,35 @@ public class AuthController {
 
     @PostMapping("/login")
     public ApiResult<Map<String, String>> login(@Validated @RequestBody LoginReq req) {
-        AppUser user = userRepository.findByUsername(req.getUsername())
-                .orElseThrow(() -> new ApiException(401, "用户名或密码错误"));
-        if (!passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+        String username = req.getUsername();
+        long[] attempt = ATTEMPTS.get(username);
+        long now = System.currentTimeMillis();
+        if (attempt != null && attempt[1] > now) {
+            long minutes = (attempt[1] - now) / 60000 + 1;
+            throw new ApiException(429, "失败次数过多，账号已临时锁定，请 " + minutes + " 分钟后重试");
+        }
+        AppUser user = userRepository.findByUsername(username)
+                .filter(u -> passwordEncoder.matches(req.getPassword(), u.getPassword()))
+                .orElse(null);
+        if (user == null) {
+            recordFailure(username, attempt);
             throw new ApiException(401, "用户名或密码错误");
         }
+        ATTEMPTS.remove(username);
         return ApiResult.ok(Map.of("token", jwtService.issue(user.getUsername()), "username", user.getUsername()));
+    }
+
+    private void recordFailure(String username, long[] attempt) {
+        long now = System.currentTimeMillis();
+        // attempt[0]=连续失败次数, attempt[1]=锁定截止时间(0=未锁定)；仅当锁定已过期才重新计数
+        if (attempt == null) attempt = new long[]{0, 0};
+        else if (attempt[1] != 0 && attempt[1] < now) attempt = new long[]{0, 0};
+        attempt[0]++;
+        if (attempt[0] >= MAX_ATTEMPTS) {
+            attempt[1] = now + LOCK_MS;
+            attempt[0] = 0;
+        }
+        ATTEMPTS.put(username, attempt);
     }
 
     @GetMapping("/me")

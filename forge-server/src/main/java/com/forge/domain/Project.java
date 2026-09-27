@@ -33,6 +33,9 @@ public class Project {
     /** 私有仓库凭据（SSH_KEY 或 存 token 的 PASSWORD/TEXT），空=公开仓库 */
     private String gitCredentialId;
 
+    /** Webhook 自动构建密钥（自动生成，可重新生成；空=未启用） */
+    private String webhookSecret;
+
     private String defaultBranch;
 
     /** 技术栈描述，如 vue/npm、maven */

@@ -1,9 +1,8 @@
 package com.forge.deploy;
 
-import com.forge.common.ApiException;
 import com.forge.build.ArtifactService;
+import com.forge.common.ApiException;
 import com.forge.domain.Artifact;
-import com.forge.domain.BuildTask;
 import com.forge.domain.Deployment;
 import com.forge.domain.Environment;
 import com.forge.domain.EnvKind;
@@ -13,19 +12,22 @@ import com.forge.infra.log.LogSink;
 import com.forge.infra.log.LogStreamService;
 import com.forge.infra.process.TaskRegistry;
 import com.forge.project.ProjectService;
+import com.forge.setting.NotifyService;
 import com.forge.setting.SettingService;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
 
-/** 部署编排：落库 → 线程池执行（Deployer.deploy → 健康检查 → 更新状态）；回滚生成新部署记录 */
+/** 部署编排：落库 → 线程池执行（Deployer.deploy → 健康检查 → 更新状态 → 通知）；回滚生成新部署记录；支持批量顺序部署 */
 @Slf4j
 @Service
 public class DeployService {
@@ -39,6 +41,7 @@ public class DeployService {
     private final LogStreamService logStreamService;
     private final TaskRegistry taskRegistry;
     private final SettingService settingService;
+    private final NotifyService notifyService;
     private final com.forge.infra.ssh.SshService sshService;
     private final com.forge.config.ForgeProperties props;
     private final ThreadPoolExecutor deployExecutor;
@@ -53,6 +56,7 @@ public class DeployService {
                          LogStreamService logStreamService,
                          TaskRegistry taskRegistry,
                          SettingService settingService,
+                         NotifyService notifyService,
                          com.forge.infra.ssh.SshService sshService,
                          com.forge.config.ForgeProperties props,
                          @Qualifier("deployExecutor") ThreadPoolExecutor deployExecutor) {
@@ -66,9 +70,16 @@ public class DeployService {
         this.logStreamService = logStreamService;
         this.taskRegistry = taskRegistry;
         this.settingService = settingService;
+        this.notifyService = notifyService;
         this.sshService = sshService;
         this.props = props;
         this.deployExecutor = deployExecutor;
+    }
+
+    @Data
+    public static class BatchItem {
+        private String projectId;
+        private String artifactId;
     }
 
     public Deployment start(String projectId, String envId, String artifactId) {
@@ -79,17 +90,50 @@ public class DeployService {
         if (!artifact.getProject().getId().equals(projectId)) {
             throw new ApiException("制品不属于该项目");
         }
-        if (env.getKind() == EnvKind.SSH && artifact.getType() == com.forge.domain.ArtifactType.TAR
-                && project.getType() == com.forge.domain.ProjectType.FRONTEND) {
-            // 合法：前端静态包部署
-        }
-        return submit(project, env, artifact, null, null);
+        return createAndSubmit(project, env, artifact, null, null);
     }
 
-    /**
-     * 回滚：撤销某次部署，回到它之前同项目同环境的最近一次成功版本。
-     * 生成一条 rollbackOf 指向被撤销部署的新部署记录；K8S 优先 helm rollback 到历史 revision。
-     */
+    /** 批量顺序部署：同一环境逐个部署，前序失败即中止，剩余标记"已取消" */
+    public List<Deployment> startBatch(String envId, List<BatchItem> items) {
+        if (items == null || items.isEmpty()) throw new ApiException("批量部署列表为空");
+        Environment env = environmentService.require(envId);
+        deployers.stream().filter(d -> d.kind() == env.getKind()).findFirst()
+                .orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
+
+        List<Deployment> created = new ArrayList<>();
+        for (BatchItem item : items) {
+            Project project = projectService.require(item.getProjectId());
+            Artifact artifact = artifactRepository.findById(item.getArtifactId())
+                    .orElseThrow(() -> ApiException.notFound("制品"));
+            if (!artifact.getProject().getId().equals(item.getProjectId())) {
+                throw new ApiException("制品不属于项目: " + project.getCode());
+            }
+            created.add(createRecord(project, env, artifact, null, null));
+        }
+        List<String> ids = created.stream().map(Deployment::getId).toList();
+        deployExecutor.submit(() -> runBatch(ids));
+        return created;
+    }
+
+    private void runBatch(List<String> ids) {
+        boolean stopped = false;
+        for (String id : ids) {
+            Deployment dep = deploymentRepository.findById(id).orElse(null);
+            if (dep == null) continue;
+            if (stopped) {
+                dep.setStatus(TaskStatus.CANCELLED);
+                dep.setMessage("前序部署失败，批量中止");
+                dep.setFinishedAt(LocalDateTime.now());
+                deploymentRepository.save(dep);
+                logStreamService.finish("deploy:" + id);
+                continue;
+            }
+            TaskStatus finalStatus = runDeployment(dep, null);
+            if (finalStatus != TaskStatus.SUCCESS) stopped = true;
+        }
+    }
+
+    /** 回滚：撤销某次部署，回到它之前同项目同环境的最近一次成功版本。 */
     public Deployment rollback(String deploymentId) {
         Deployment target = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> ApiException.notFound("部署记录"));
@@ -103,39 +147,50 @@ public class DeployService {
                 && previous.getResult().get("revision") instanceof Number n) {
             revision = n.intValue();
         }
-        return submit(target.getProject(), target.getEnvironment(), previous.getArtifact(), target.getId(), revision);
+        return createAndSubmit(target.getProject(), target.getEnvironment(), previous.getArtifact(), target.getId(), revision);
     }
 
-    private Deployment submit(Project project, Environment env, Artifact artifact,
-                              String rollbackOf, Integer rollbackRevision) {
-        Deployment dep = new Deployment();
-        dep.setProject(project);
-        dep.setEnvironment(env);
-        dep.setArtifact(artifact);
-        dep.setStatus(TaskStatus.RUNNING);
-        dep.setRollbackOf(rollbackOf);
-        dep.setOperator(currentOperator());
-        dep.setLogPath(props.logPath().resolve("deploy-" + dep.getId() + ".log").toString());
-        dep = deploymentRepository.save(dep);
-
+    private Deployment createAndSubmit(Project project, Environment env, Artifact artifact,
+                                       String rollbackOf, Integer rollbackRevision) {
+        Deployment dep = createRecord(project, env, artifact, rollbackOf, rollbackRevision);
         String depId = dep.getId();
         Integer revF = rollbackRevision;
         deployExecutor.submit(() -> execute(depId, revF));
         return dep;
     }
 
+    private Deployment createRecord(Project project, Environment env, Artifact artifact,
+                                    String rollbackOf, Integer rollbackRevision) {
+        Deployment dep = new Deployment();
+        dep.setProject(project);
+        dep.setEnvironment(env);
+        dep.setArtifact(artifact);
+        dep.setStatus(TaskStatus.PENDING); // 执行时置为 RUNNING；批量场景前序未完成时显示"排队中"
+        dep.setRollbackOf(rollbackOf);
+        dep.setOperator(currentOperator());
+        dep.setLogPath(props.logPath().resolve("deploy-" + dep.getId() + ".log").toString());
+        return deploymentRepository.save(dep);
+    }
+
     void execute(String depId, Integer rollbackRevision) {
+        Deployment dep = deploymentRepository.findById(depId).orElse(null);
+        if (dep == null) return;
+        runDeployment(dep, rollbackRevision);
+    }
+
+    /** 执行单次部署（含健康检查与通知），返回数据库中的最终状态（供批量编排判断） */
+    private TaskStatus runDeployment(Deployment dep, Integer rollbackRevision) {
+        String depId = dep.getId();
         LogSink sink = logStreamService.sink("deploy:" + depId, props.logPath().resolve("deploy-" + depId + ".log"));
-        Deployment dep = null;
         try {
-            dep = deploymentRepository.findById(depId).orElseThrow();
+            dep.setStatus(TaskStatus.RUNNING);
             dep.setStartedAt(LocalDateTime.now());
             dep = deploymentRepository.save(dep);
 
-            Path artifactFile = artifactService.resolveFile(dep.getArtifact());
             Deployment depRef = dep;
             Deployer deployer = deployers.stream().filter(d -> d.kind() == depRef.getEnvironment().getKind())
                     .findFirst().orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
+            Path artifactFile = artifactService.resolveFile(dep.getArtifact());
 
             DeployContext ctx = DeployContext.builder()
                     .project(dep.getProject())
@@ -162,18 +217,28 @@ public class DeployService {
             sink.line("");
             sink.line("[forge] 部署失败: " + e.getMessage());
             log.warn("deploy {} failed", depId, e);
-            if (dep != null) {
-                dep.setStatus(TaskStatus.FAILED);
-                dep.setMessage(e.getMessage());
-            }
+            dep.setStatus(TaskStatus.FAILED);
+            dep.setMessage(e.getMessage());
         } finally {
-            if (dep != null) {
-                dep.setFinishedAt(LocalDateTime.now());
-                deploymentRepository.save(dep);
-            }
+            dep.setFinishedAt(LocalDateTime.now());
+            deploymentRepository.save(dep);
             taskRegistry.unregister(depId);
             logStreamService.finish("deploy:" + depId);
+            notifyResult(dep);
         }
+        return deploymentRepository.findById(depId).map(Deployment::getStatus).orElse(TaskStatus.FAILED);
+    }
+
+    private void notifyResult(Deployment dep) {
+        String title = "Forge 部署" + ("SUCCESS".equals(String.valueOf(dep.getStatus())) ? "成功" : "失败");
+        String msg = String.format("项目：%s\n环境：%s（%s）\n版本：%s\n操作人：%s%s",
+                dep.getProject().getName(),
+                dep.getEnvironment().getName(),
+                dep.getEnvironment().getKind(),
+                dep.getArtifact() == null ? "-" : dep.getArtifact().getVersion(),
+                dep.getOperator() == null ? "-" : dep.getOperator(),
+                dep.getMessage() == null ? "" : "\n原因：" + dep.getMessage());
+        notifyService.send(title, msg);
     }
 
     public boolean cancel(String depId) {

@@ -55,7 +55,21 @@ public class FrontendBuilder implements Builder {
         if (registry != null && !registry.isBlank() && !"https://registry.npmjs.org".equals(registry)) {
             install.add("--registry=" + registry);
         }
-        ProcessRunner.run(install, src, ctx.getEnv(), ctx.getLog(), null, 1800);
+        try {
+            ProcessRunner.run(install, src, ctx.getEnv(), ctx.getLog(), null, 1800);
+        } catch (ApiException e) {
+            // lockfile 与 package.json 不同步时 npm ci 会失败，降级 npm install 重试
+            if ("npm".equals(pm) && hasLock && install.contains("ci")) {
+                ctx.getLog().line("[forge] npm ci 失败（" + e.getMessage() + "），降级为 npm install 重试");
+                List<String> fallback = new ArrayList<>(List.of("npm", "install"));
+                if (install.contains("--registry=")) {
+                    fallback.add(install.get(install.indexOf("--registry=")));
+                }
+                ProcessRunner.run(fallback, src, ctx.getEnv(), ctx.getLog(), null, 1800);
+            } else {
+                throw e;
+            }
+        }
 
         // 2. 构建（命令可覆盖）
         List<String> buildCmd = new ArrayList<>();

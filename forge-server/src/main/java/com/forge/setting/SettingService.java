@@ -24,6 +24,9 @@ public class SettingService {
         DEFAULTS.put("dockerBaseJre", "eclipse-temurin:17-jre");
         DEFAULTS.put("dockerBaseNginx", "nginx:alpine");
         DEFAULTS.put("keepReleases", "5");                 // SSH 部署保留 release 数
+        DEFAULTS.put("keepLogDays", "30");                 // 构建/部署日志保留天数，0=永久
+        DEFAULTS.put("notifyType", "none");                // none|dingtalk|wecom|feishu|raw
+        DEFAULTS.put("notifyWebhook", "");                 // 通知机器人 webhook 地址
     }
 
     private static final String MASK = "******";

@@ -24,6 +24,21 @@
             <el-form-item label="后端基础镜像"><el-input v-model="s.dockerBaseJre" /></el-form-item>
             <el-form-item label="前端基础镜像"><el-input v-model="s.dockerBaseNginx" /></el-form-item>
             <el-form-item label="保留 release 数"><el-input v-model="s.keepReleases" style="width: 120px" /></el-form-item>
+            <el-form-item label="日志保留天数"><el-input v-model="s.keepLogDays" style="width: 120px" placeholder="0=永久保留" /></el-form-item>
+            <el-divider content-position="left">部署结果通知</el-divider>
+            <el-form-item label="通知渠道">
+              <el-select v-model="s.notifyType" style="width: 200px">
+                <el-option label="不通知" value="none" />
+                <el-option label="钉钉机器人" value="dingtalk" />
+                <el-option label="企业微信机器人" value="wecom" />
+                <el-option label="飞书机器人" value="feishu" />
+                <el-option label="通用 JSON" value="raw" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Webhook 地址">
+              <el-input v-model="s.notifyWebhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
+              <div class="muted">部署成功/失败后推送消息；发送失败不影响部署本身</div>
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="save">保存设置</el-button>
             </el-form-item>

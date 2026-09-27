@@ -12,6 +12,7 @@ export const getProject = (id: string) => unwrap(http.get(`/projects/${id}`))
 export const createProject = (data: any) => unwrap(http.post('/projects', data))
 export const updateProject = (id: string, data: any) => unwrap(http.put(`/projects/${id}`, data))
 export const deleteProject = (id: string) => unwrap(http.delete(`/projects/${id}`))
+export const regenerateWebhookSecret = (id: string) => unwrap<string>(http.put(`/projects/${id}/webhook-secret`))
 
 // ---------- 环境 ----------
 export const listEnvironments = () => unwrap<any[]>(http.get('/environments'))
@@ -45,6 +46,8 @@ export const artifactDownloadUrl = (id: string) => `/api/artifacts/${id}/downloa
 // ---------- 部署 ----------
 export const startDeploy = (projectId: string, envId: string, artifactId: string) =>
   unwrap<any>(http.post('/deployments', { projectId, envId, artifactId }))
+export const batchDeploy = (envId: string, items: { projectId: string; artifactId: string }[]) =>
+  unwrap<any[]>(http.post('/deployments/batch', { envId, items }))
 export const rollbackDeploy = (id: string) => unwrap<any>(http.post(`/deployments/${id}/rollback`))
 export const cancelDeploy = (id: string) => unwrap(http.post(`/deployments/${id}/cancel`))
 export const listDeployments = (projectId: string | null, envId: string | null, page = 0, size = 20) =>

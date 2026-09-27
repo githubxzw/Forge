@@ -62,6 +62,10 @@
             <el-col :span="12"><el-form-item label="保留版本数"><el-input v-model="keepReleases" placeholder="5" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item label="systemd 服务"><el-input v-model="systemdService" placeholder="可选，如 myapp.service" /></el-form-item></el-col>
           </el-row>
+          <el-form-item label="Java 路径">
+            <el-input v-model="javaHome" placeholder="如 /usr/lib/jvm/java-17，留空则用 PATH 中的 java" />
+            <div class="muted">SSH 非交互登录的 PATH 常缺少 java，建议填服务器上 JAVA_HOME</div>
+          </el-form-item>
         </template>
 
         <template v-if="form.kind === 'DOCKER'">
@@ -107,7 +111,7 @@ const form = ref<any>({})
 const testing = ref('')
 
 const host = ref(''); const port = ref(''); const username = ref(''); const credentialId = ref('')
-const deployDir = ref(''); const keepReleases = ref(''); const systemdService = ref('')
+const deployDir = ref(''); const keepReleases = ref(''); const systemdService = ref(''); const javaHome = ref('')
 const composeDir = ref(''); const kubeconfigCredentialId = ref(''); const namespace = ref('')
 const varsText = ref('')
 
@@ -128,6 +132,7 @@ function openEdit(row: any) {
   host.value = c.host || ''; port.value = c.port ?? ''; username.value = c.username || ''
   credentialId.value = c.credentialId || ''; deployDir.value = c.deployDir || ''
   keepReleases.value = c.keepReleases ?? ''; systemdService.value = c.systemdService || ''
+  javaHome.value = c.javaHome || ''
   composeDir.value = c.composeDir || ''; kubeconfigCredentialId.value = c.kubeconfigCredentialId || ''
   namespace.value = c.namespace || ''
   const vars = row?.vars || {}
@@ -147,6 +152,7 @@ function composeForm() {
     c.deployDir = deployDir.value
     if (keepReleases.value) c.keepReleases = Number(keepReleases.value) || keepReleases.value
     if (systemdService.value) c.systemdService = systemdService.value
+    if (javaHome.value) c.javaHome = javaHome.value
   }
   if (form.value.kind === 'DOCKER') c.composeDir = composeDir.value
   if (form.value.kind === 'K8S') {

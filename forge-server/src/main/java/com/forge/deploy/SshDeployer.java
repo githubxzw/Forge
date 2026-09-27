@@ -53,9 +53,13 @@ public class SshDeployer implements Deployer {
                 ssh.upload(ctx.getArtifactFile(), versionDir + "/app.jar", log);
                 String javaOpts = ctx.envVars().getOrDefault("java.opts", "");
                 String port = ctx.envVars().getOrDefault("server.port", "");
+                // SSH 非交互 shell 的 PATH 常缺少 java，优先使用环境配置的 javaHome
+                String javaHome = ctx.conn("javaHome");
+                String javaBin = javaHome == null || javaHome.isBlank()
+                        ? "java" : javaHome.replaceAll("/+$", "") + "/bin/java";
                 String startScript = "#!/bin/sh\n"
                         + "cd " + deployDir + "/current\n"
-                        + "exec java " + javaOpts + " -jar app.jar"
+                        + "exec " + javaBin + " " + javaOpts + " -jar app.jar"
                         + (port.isBlank() ? "" : " --server.port=" + port) + "\n";
                 ssh.uploadText(startScript, versionDir + "/start.sh", log);
                 ssh.execOrThrow("chmod +x " + versionDir + "/start.sh", log, 30);

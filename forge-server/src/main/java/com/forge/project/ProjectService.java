@@ -29,6 +29,7 @@ public class ProjectService {
         }
         if (repository.existsByCode(p.getCode())) throw new ApiException("项目编码已存在: " + p.getCode());
         if (p.getDefaultBranch() == null || p.getDefaultBranch().isBlank()) p.setDefaultBranch("main");
+        p.setWebhookSecret(newSecret());
         return repository.save(p);
     }
 
@@ -52,5 +53,18 @@ public class ProjectService {
     @Transactional
     public void delete(String id) {
         repository.deleteById(id);
+    }
+
+    /** 重新生成 Webhook 密钥（旧的立即失效） */
+    @Transactional
+    public String regenerateWebhookSecret(String id) {
+        Project p = require(id);
+        p.setWebhookSecret(newSecret());
+        repository.save(p);
+        return p.getWebhookSecret();
+    }
+
+    private static String newSecret() {
+        return java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 }

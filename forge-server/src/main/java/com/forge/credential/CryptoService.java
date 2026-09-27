@@ -38,7 +38,7 @@ public class CryptoService {
                 new SecureRandom().nextBytes(bytes);
                 b64 = Base64.getEncoder().encodeToString(bytes);
                 Files.createDirectories(keyFile.getParent());
-                Files.writeString(keyFile, b64);
+                writePrivate(keyFile, b64);
             }
             byte[] bytes = Base64.getDecoder().decode(b64);
             if (bytes.length != 32) throw new ApiException(500, "FORGE_SECRET_KEY 必须是 32 字节的 Base64");
@@ -57,6 +57,16 @@ public class CryptoService {
 
     public Map<String, String> decryptMap(String blob) {
         return com.forge.common.JsonUtils.toStrMap(decryptText(blob));
+    }
+
+    /** 私钥文件落盘并收紧权限（600），防同机其他用户读取 */
+    private static void writePrivate(Path file, String content) throws Exception {
+        Files.writeString(file, content);
+        try {
+            Files.setPosixFilePermissions(file, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException ignore) {
+            // 非 POSIX 文件系统（如 Windows）跳过
+        }
     }
 
     public synchronized String encryptText(String plain) {

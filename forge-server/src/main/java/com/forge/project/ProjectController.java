@@ -39,4 +39,9 @@ public class ProjectController {
         projectService.delete(id);
         return ApiResult.ok();
     }
+
+    @PutMapping("/{id}/webhook-secret")
+    public ApiResult<String> regenerateWebhookSecret(@PathVariable String id) {
+        return ApiResult.ok(projectService.regenerateWebhookSecret(id));
+    }
 }

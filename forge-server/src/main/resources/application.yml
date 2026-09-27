@@ -28,6 +28,7 @@ forge:
   build-parallelism: ${FORGE_BUILD_PARALLELISM:2}
   deploy-parallelism: 2
   jwt-expire-hours: 24
+  allowed-origins: ${FORGE_ALLOWED_ORIGINS:*}
   admin:
     username: ${FORGE_ADMIN_USERNAME:admin}
     password: ${FORGE_ADMIN_PASSWORD:admin123}

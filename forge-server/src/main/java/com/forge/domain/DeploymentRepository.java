@@ -15,4 +15,6 @@ public interface DeploymentRepository extends JpaRepository<Deployment, String> 
     /** 目标部署之前（不含）同项目同环境的最近一次成功部署 —— 回滚即部署它 */
     Deployment findFirstByProjectIdAndEnvironmentIdAndStatusAndCreatedAtBeforeOrderByCreatedAtDesc(
             String projectId, String environmentId, TaskStatus status, java.time.LocalDateTime before);
+
+    List<Deployment> findByStatusIn(List<TaskStatus> statuses);
 }

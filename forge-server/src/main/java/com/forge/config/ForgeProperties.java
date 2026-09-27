@@ -16,6 +16,8 @@ public class ForgeProperties {
     private int buildParallelism = 2;
     private int deployParallelism = 2;
     private int jwtExpireHours = 24;
+    /** CORS 允许来源，逗号分隔；公网部署务必改为具体域名 */
+    private String allowedOrigins = "*";
     private Admin admin = new Admin();
 
     @Data

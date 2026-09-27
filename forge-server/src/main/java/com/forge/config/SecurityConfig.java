@@ -26,6 +26,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
+    private final ForgeProperties forgeProps;
 
     @Bean
     public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
@@ -33,7 +34,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOriginPatterns(List.of(forgeProps.getAllowedOrigins().split("\\s*,\\s*")));
         config.setAllowedMethods(List.of("*"));
         config.setAllowedHeaders(List.of("*"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -47,7 +48,7 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/login", "/error").permitAll()
+                .requestMatchers("/api/auth/login", "/error", "/api/webhook/**").permitAll()
                 .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/ws/**").permitAll()
                 // SPA 路由刷新兜底：非 API/WS 的 GET 请求放行（真实静态资源或经 /error 转发到 index.html）
                 .requestMatchers(req -> {

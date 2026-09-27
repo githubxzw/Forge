@@ -32,6 +32,18 @@ public class DeploymentController {
         return ApiResult.ok(deployService.start(req.getProjectId(), req.getEnvId(), req.getArtifactId()));
     }
 
+    /** 批量顺序部署：同一环境逐个部署，前序失败即中止 */
+    @PostMapping("/batch")
+    public ApiResult<java.util.List<Deployment>> batch(@RequestBody BatchReq req) {
+        return ApiResult.ok(deployService.startBatch(req.getEnvId(), req.getItems()));
+    }
+
+    @Data
+    public static class BatchReq {
+        private String envId;
+        private java.util.List<com.forge.deploy.DeployService.BatchItem> items;
+    }
+
     @PostMapping("/{id}/rollback")
     public ApiResult<Deployment> rollback(@PathVariable String id) {
         return ApiResult.ok(deployService.rollback(id));

@@ -5,6 +5,9 @@
         <h2>部署中心</h2>
         <p class="desc">选项目 → 选环境 → 选制品，一键部署与回滚</p>
       </div>
+      <div class="actions">
+        <el-button :icon="Operation" @click="openBatch">批量部署</el-button>
+      </div>
     </div>
     <el-card shadow="never" style="margin-bottom: 16px">
       <template #header>🚀 一键部署</template>
@@ -69,6 +72,36 @@
     <el-drawer v-model="drawer" title="部署日志" size="55%" destroy-on-close append-to-body>
       <log-view v-if="currentId" kind="deploy" :id="currentId" :log-url="deployLogUrl(currentId)" />
     </el-drawer>
+
+    <el-dialog v-model="batchOpen" title="批量部署" width="720px">
+      <el-form inline>
+        <el-form-item label="目标环境">
+          <el-select v-model="batchEnv" style="width: 260px" placeholder="选择环境">
+            <el-option v-for="e in environments" :key="e.id" :label="`${e.name} (${e.kind})`" :value="e.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <el-table :data="batchRows" @selection-change="rows => (batchSelection = rows)" max-height="360" size="small">
+        <el-table-column type="selection" width="42" />
+        <el-table-column label="项目" min-width="150">
+          <template #="{ row }">{{ row.project.name }}<div class="muted mono">{{ row.project.code }}</div></template>
+        </el-table-column>
+        <el-table-column label="部署制品" min-width="260">
+          <template #="{ row }">
+            <el-select v-model="row.artifactId" size="small" style="width: 100%" placeholder="该环境下暂无可用制品">
+              <el-option v-for="a in row.artifacts" :key="a.id" :label="`${a.type} · ${a.version}`" :value="a.id" />
+            </el-select>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="muted" style="margin-top: 10px">
+        按勾选顺序依次部署到所选环境；某个项目失败会立即中止后续部署。各项目默认选中其最新可用制品。
+      </div>
+      <template #footer>
+        <el-button @click="batchOpen = false">取消</el-button>
+        <el-button type="primary" :loading="batchRunning" @click="doBatch">开始批量部署</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -80,10 +113,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import {
   listProjects, listEnvironments, listArtifacts, listDeployments,
-  startDeploy, rollbackDeploy, cancelDeploy, deployLogUrl
+  startDeploy, batchDeploy, rollbackDeploy, cancelDeploy, deployLogUrl
 } from '../api/api'
 import StatusTag from '../components/StatusTag.vue'
 import LogView from '../components/LogView.vue'
+import { Operation } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const projects = ref<any[]>([])
@@ -171,6 +205,46 @@ function poll(id: string) {
     const row = rows.value.find(r => r.id === id)
     if (!row || row.status !== 'RUNNING') clearInterval(timer)
   }, 5000)
+}
+
+// ---------- 批量部署 ----------
+const batchOpen = ref(false)
+const batchEnv = ref('')
+const batchRows = ref<any[]>([])
+const batchSelection = ref<any[]>([])
+const batchRunning = ref(false)
+
+function allowedFor(kind: string | undefined) {
+  const allowed: Record<string, string[]> = { SSH: ['TAR', 'JAR'], DOCKER: ['IMAGE'], K8S: ['CHART'] }
+  return kind ? allowed[kind] : ['TAR', 'JAR', 'IMAGE', 'CHART']
+}
+
+function openBatch() {
+  batchEnv.value = dEnv.value || ''
+  batchRows.value = projects.value.map(p => {
+    const arts = artifacts.value
+      .filter(a => a.project?.id === p.id && allowedFor(environments.value.find(e => e.id === batchEnv.value)?.kind).includes(a.type))
+    return { project: p, artifacts: arts, artifactId: arts[0]?.id || '' }
+  })
+  batchSelection.value = []
+  batchOpen.value = true
+}
+
+async function doBatch() {
+  if (!batchEnv.value) { ElMessage.warning('请选择目标环境'); return }
+  const items = batchSelection.value
+    .filter(r => r.artifactId)
+    .map(r => ({ projectId: r.project.id, artifactId: r.artifactId }))
+  if (!items.length) { ElMessage.warning('请勾选项目并选择制品'); return }
+  batchRunning.value = true
+  try {
+    await batchDeploy(batchEnv.value, items)
+    ElMessage.success(`已提交 ${items.length} 个部署，按顺序执行`)
+    batchOpen.value = false
+    page.value = 0
+    await load()
+  } catch (e) {}
+  batchRunning.value = false
 }
 
 onMounted(async () => {

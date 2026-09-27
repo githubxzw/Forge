@@ -74,6 +74,20 @@ async function load() {
   rows.value = p.content || []
   total.value = p.totalElements || 0
   loading.value = false
+  scheduleAuto()
+}
+
+/** 有进行中/排队的任务时自动刷新列表 */
+let autoTimer: any = null
+function scheduleAuto() {
+  clearInterval(autoTimer)
+  if (rows.value.some(r => r.status === 'RUNNING' || r.status === 'PENDING')) {
+    autoTimer = setInterval(async () => {
+      const p = await listBuilds(projectId.value, page.value, 20)
+      rows.value = p.content || []
+      scheduleAuto()
+    }, 5000)
+  }
 }
 
 function openLog(row: any) {
@@ -114,5 +128,5 @@ onMounted(async () => {
     if (row) openLog(row)
   }
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => { clearInterval(timer); clearInterval(autoTimer) })
 </script>

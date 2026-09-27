@@ -14,8 +14,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResult<Void>> handleApi(ApiException e) {
-        return ResponseEntity.status(e.getCode() == 404 ? 404 : e.getCode() == 401 ? 401 : 400)
-                .body(ApiResult.error(e.getCode(), e.getMessage()));
+        int status = e.getCode();
+        if (status < 400 || status > 599) status = 400; // 业务码透传为 HTTP 状态码（如 429）
+        return ResponseEntity.status(status).body(ApiResult.error(e.getCode(), e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

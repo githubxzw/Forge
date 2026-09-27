@@ -75,6 +75,10 @@ public class BuildService {
     }
 
     public BuildTask start(String projectId, String branch, List<String> targets) {
+        return start(projectId, branch, targets, com.forge.domain.BuildTrigger.MANUAL);
+    }
+
+    public BuildTask start(String projectId, String branch, List<String> targets, com.forge.domain.BuildTrigger trigger) {
         Project project = projectService.require(projectId);
         if (branch == null || branch.isBlank()) branch = project.getDefaultBranch() == null ? "main" : project.getDefaultBranch();
 
@@ -98,6 +102,7 @@ public class BuildService {
         task.setBranch(branch);
         task.setTargets(parsed.stream().map(Enum::name).toList());
         task.setStatus(TaskStatus.PENDING);
+        task.setTrigger(trigger);
         task.setLogPath(props.logPath().resolve("build-" + task.getId() + ".log").toString());
         task = buildTaskRepository.save(task);
 

@@ -76,6 +76,31 @@ java -jar forge-server/target/forge-server.jar
 cd forge-web && npm install && npm run dev   # vite 代理 /api、/ws 到 8080
 ```
 
+## 部署 Forge 到云服务器（生产建议）
+
+```bash
+# 1. 上传 jar 与部署样例
+scp forge-server/target/forge-server.jar deploy/forge.service deploy/nginx-forge.conf deploy/backup.sh user@server:/tmp/
+
+# 2. 服务器上安装（假设专用用户 forge，目录 /opt/forge）
+sudo useradd -r -m -d /opt/forge forge || true
+sudo mkdir -p /opt/forge && sudo mv /tmp/forge-server.jar /opt/forge/
+sudo chown -R forge:forge /opt/forge
+sudo cp /tmp/forge.service /etc/systemd/system/   # 按需修改 FORGE_ADMIN_PASSWORD
+sudo systemctl daemon-reload && sudo systemctl enable --now forge
+
+# 3. HTTPS 反向代理（日志实时推送依赖 WebSocket 配置）
+sudo cp /tmp/nginx-forge.conf /etc/nginx/conf.d/   # 修改 server_name 与证书路径
+sudo nginx -t && sudo nginx -s reload
+
+# 4. 每日备份（SQLite + 制品 + 加密密钥）
+sudo cp /tmp/backup.sh /opt/forge/ && sudo chmod +x /opt/forge/backup.sh
+(crontab -l 2>/dev/null; echo "30 2 * * * /opt/forge/backup.sh") | crontab -
+```
+
+安全清单：首次登录后立即改密码；`FORGE_ALLOWED_ORIGINS` 设为你的域名；防火墙只开放 80/443；
+数据目录 `/opt/forge/data` 包含加密密钥与数据库，务必用 `deploy/backup.sh` 定期备份。
+
 ## 部署形态说明
 
 - **SSH + JAR**：上传 jar 到 `{deployDir}/releases/{version}/`，生成 `start.sh`（可用环境变量 `java.opts`、`server.port`），软链 `current` 切换后重启（优先 systemd 服务，否则 `pkill + nohup`）。旧 release 自动清理（保留 `keepReleases` 个）。

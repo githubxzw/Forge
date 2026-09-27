@@ -3,6 +3,7 @@ package com.forge;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,6 +11,7 @@ import java.nio.file.Path;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableScheduling
 public class ForgeApplication {
     public static void main(String[] args) {
         // SQLite 在 JPA 初始化时就要求数据目录存在，这里提前创建（优先级：CLI 参数 > 系统属性 > 环境变量 > ~/.forge）

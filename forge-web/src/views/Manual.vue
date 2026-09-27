@@ -103,8 +103,10 @@
       </p>
       <ul>
         <li><b>回滚</b>：任何成功部署的记录都可以一键回滚 —— 回到该部署之前最近一次成功版本；K8s 走 <span class="mono">helm rollback</span>，云服务器切换软链。</li>
+        <li><b>批量部署</b>：部署中心的「批量部署」可勾选多个项目按顺序发布到同一环境，前序失败立即中止，适合一次更新一组服务。</li>
         <li><b>审计</b>：每条部署记录了操作人、时间、结果与完整日志，出问题可追溯。</li>
-        <li><b>保留策略</b>：云服务器默认保留最近 5 个 release（环境配置里可改），制品永久保留可手动删除。</li>
+        <li><b>通知</b>：系统设置里配置钉钉/企业微信/飞书机器人后，每次部署结束都会推送结果。</li>
+        <li><b>保留策略</b>：云服务器默认保留最近 5 个 release（环境配置里可改），制品永久保留可手动删除；构建日志按系统设置的天数自动清理。</li>
       </ul>
     </el-card>
 
@@ -114,8 +116,12 @@
         Forge 在「系统设置」页探测构建机工具链。缺什么装什么：构建机需要 git（必需）+ 对应构建工具；docker/helm 只在构建镜像或部署 K8s 时需要。</p>
       <p><b>Q：私有仓库拉取失败？</b><br />
         检查三点：凭据类型与地址协议是否匹配（token 配 HTTPS 地址、私钥配 SSH 地址）；GitHub Token 是否勾了 repo 权限；SSH 私钥是否完整（包含 BEGIN/END 行）。</p>
+      <p><b>Q：怎么做到 push 代码自动构建？</b><br />
+        项目详情页有「Webhook 自动构建」卡片：复制地址和密钥，到 GitHub / Gitee / GitLab 仓库的 Settings → Webhooks 添加，
+        Content-Type 选 application/json、Secret 填密钥即可。支持 GitHub 签名校验与 GitLab Token；同分支有进行中的构建会自动跳过。</p>
       <p><b>Q：SSH 部署后端包后服务没起来？</b><br />
-        看部署日志确认启动命令执行成功；若服务器用 systemd 托管，在环境配置里填 systemdService 名称。应用自身日志在 <span class="mono">{deployDir}/logs/{版本}.log</span>。</p>
+        看部署日志确认启动命令执行成功；若服务器用 systemd 托管，在环境配置里填 systemdService 名称。
+        最常见原因是 SSH 非交互登录找不到 java —— 在环境配置里填「Java 路径」（服务器上 JAVA_HOME）。应用自身日志在 <span class="mono">{deployDir}/logs/{版本}.log</span>。</p>
       <p><b>Q：健康检查一直失败？</b><br />
         确认项目配置的健康检查 URL 从 Forge 所在网络可达；云服务器场景下 host 自动取环境配置的 IP，也可以直接填完整 URL。</p>
       <p><b>Q：忘记管理员密码？</b><br />
