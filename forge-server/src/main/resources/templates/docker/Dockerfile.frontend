@@ -1,0 +1,5 @@
+# Forge 内置前端镜像模板：静态产物交给 nginx 托管
+FROM {{NGINX_BASE}}
+COPY {{OUTPUT_DIR}}/ /usr/share/nginx/html/
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

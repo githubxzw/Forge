@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: forge
+  datasource:
+    url: jdbc:sqlite:${forge.data-dir}/forge.db?journal_mode=WAL&busy_timeout=10000
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+
+forge:
+  data-dir: ${FORGE_DATA_DIR:${user.home}/.forge}
+  work-dir: ${forge.data-dir}/workspace
+  artifact-dir: ${forge.data-dir}/artifacts
+  log-dir: ${forge.data-dir}/logs
+  build-parallelism: ${FORGE_BUILD_PARALLELISM:2}
+  deploy-parallelism: 2
+  jwt-expire-hours: 24
+  admin:
+    username: ${FORGE_ADMIN_USERNAME:admin}
+    password: ${FORGE_ADMIN_PASSWORD:admin123}
+
+logging:
+  level:
+    org.apache.sshd: WARN
+    org.hibernate: WARN

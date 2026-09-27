@@ -1,0 +1,15 @@
+body { margin: 0; background: #f5f7fa; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.page { padding: 16px 20px; }
+.toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.muted { color: #909399; font-size: 12px; }
+.mono { font-family: Menlo, Consolas, monospace; font-size: 12px; }
+
+/* 实时日志 */
+.log-box {
+  background: #1e1e28; color: #d6e2d0; font-family: Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.6; padding: 12px 14px; border-radius: 6px;
+  overflow: auto; white-space: pre-wrap; word-break: break-all; min-height: 300px; max-height: 65vh;
+}
+.stat-card { text-align: center; }
+.stat-card .num { font-size: 30px; font-weight: 600; color: #303133; }
+.stat-card .label { color: #909399; font-size: 13px; margin-top: 4px; }

@@ -1,0 +1,12 @@
+target/
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+node_modules/
+dist/
+forge-server/src/main/resources/static/
+data/
+*.db
+.DS_Store
