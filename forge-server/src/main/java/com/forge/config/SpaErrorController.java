@@ -22,6 +22,7 @@ public class SpaErrorController implements ErrorController {
         String forwardUri = (String) request.getAttribute(RequestDispatcher.FORWARD_REQUEST_URI);
         boolean isApi = forwardUri != null && forwardUri.startsWith("/api");
         if (!isApi && accept != null && accept.contains("text/html")) {
+            response.setStatus(200); // SPA 路由刷新：状态码重置，避免历史 404 残留
             return "forward:/index.html";
         }
         int status = response.getStatus() == 200 ? 404 : response.getStatus();

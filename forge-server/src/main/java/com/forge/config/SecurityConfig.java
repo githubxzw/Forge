@@ -49,6 +49,12 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/error").permitAll()
                 .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/ws/**").permitAll()
+                // SPA 路由刷新兜底：非 API/WS 的 GET 请求放行（真实静态资源或经 /error 转发到 index.html）
+                .requestMatchers(req -> {
+                    String uri = req.getRequestURI();
+                    return "GET".equalsIgnoreCase(req.getMethod())
+                            && !uri.startsWith("/api") && !uri.startsWith("/ws");
+                }).permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(eh -> eh.authenticationEntryPoint((req, resp, ex) -> {
                 resp.setStatus(401);

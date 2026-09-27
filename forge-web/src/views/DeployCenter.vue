@@ -1,5 +1,11 @@
 <template>
   <div class="page">
+    <div class="page-head">
+      <div>
+        <h2>部署中心</h2>
+        <p class="desc">选项目 → 选环境 → 选制品，一键部署与回滚</p>
+      </div>
+    </div>
     <el-card shadow="never" style="margin-bottom: 16px">
       <template #header>🚀 一键部署</template>
       <el-form inline>
@@ -60,7 +66,7 @@
                      :current-page="page + 1" @current-change="pg => { page = pg - 1; load() }" />
     </div>
 
-    <el-drawer v-model="drawer" title="部署日志" size="55%" destroy-on-close>
+    <el-drawer v-model="drawer" title="部署日志" size="55%" destroy-on-close append-to-body>
       <log-view v-if="currentId" kind="deploy" :id="currentId" :log-url="deployLogUrl(currentId)" />
     </el-drawer>
   </div>

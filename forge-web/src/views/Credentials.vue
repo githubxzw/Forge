@@ -1,8 +1,13 @@
 <template>
   <div class="page">
-    <div class="toolbar">
-      <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建凭据</el-button>
-      <span class="muted">凭据 AES-256-GCM 加密存储，保存后不可查看原文</span>
+    <div class="page-head">
+      <div>
+        <h2>凭据管理</h2>
+        <p class="desc">AES-256-GCM 加密存储，保存后不可查看原文</p>
+      </div>
+      <div class="actions">
+        <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建凭据</el-button>
+      </div>
     </div>
     <el-table :data="list">
       <el-table-column prop="name" label="名称" min-width="180" />

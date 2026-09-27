@@ -1,8 +1,13 @@
 <template>
   <div class="page">
-    <div class="toolbar">
-      <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建环境</el-button>
-      <span class="muted">SSH 裸机 / Docker 主机 / K8s 集群</span>
+    <div class="page-head">
+      <div>
+        <h2>环境管理</h2>
+        <p class="desc">SSH 裸机 / Docker 主机 / K8s 集群的统一接入</p>
+      </div>
+      <div class="actions">
+        <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建环境</el-button>
+      </div>
     </div>
     <el-table :data="list">
       <el-table-column prop="name" label="名称" width="160" />

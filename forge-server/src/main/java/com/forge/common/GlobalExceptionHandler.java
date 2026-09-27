@@ -25,6 +25,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ApiResult.error(400, msg));
     }
 
+    /**
+     * 静态资源未命中（即 SPA 路由，如 /dashboard）：不允许被兜底成 JSON，
+     * 重新抛出交给 /error 分发 —— HTML 请求转发 index.html，其余返回 JSON 404。
+     */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiResult<Void>> handleNoResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException e)
+            throws org.springframework.web.servlet.resource.NoResourceFoundException {
+        throw e;
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResult<Void>> handleOther(Exception e) {
         log.error("unhandled error", e);

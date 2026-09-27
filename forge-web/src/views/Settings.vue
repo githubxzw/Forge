@@ -1,5 +1,11 @@
 <template>
   <div class="page">
+    <div class="page-head">
+      <div>
+        <h2>系统设置</h2>
+        <p class="desc">镜像仓库、构建镜像源与工具链状态</p>
+      </div>
+    </div>
     <el-row :gutter="16">
       <el-col :span="14">
         <el-card>

@@ -1,8 +1,13 @@
 <template>
   <div class="page">
-    <div class="toolbar">
-      <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建项目</el-button>
-      <span class="muted">共 {{ list.length }} 个项目</span>
+    <div class="page-head">
+      <div>
+        <h2>项目管理</h2>
+        <p class="desc">注册 Git 仓库，配置构建目标与产物形态</p>
+      </div>
+      <div class="actions">
+        <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建项目</el-button>
+      </div>
     </div>
     <el-table :data="list" v-loading="loading">
       <el-table-column label="项目" min-width="180">

@@ -1,5 +1,11 @@
 <template>
   <div class="page">
+    <div class="page-head">
+      <div>
+        <h2>制品库</h2>
+        <p class="desc">构建产物的统一存放与分发</p>
+      </div>
+    </div>
     <div class="toolbar">
       <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 220px" @change="load">
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />

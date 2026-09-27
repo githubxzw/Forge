@@ -1,5 +1,11 @@
 <template>
   <div class="page">
+    <div class="page-head">
+      <div>
+        <h2>构建任务</h2>
+        <p class="desc">全部构建记录与实时日志</p>
+      </div>
+    </div>
     <div class="toolbar">
       <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 220px" @change="load">
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
@@ -28,7 +34,7 @@
                      :current-page="page + 1" @current-change="pg => { page = pg - 1; load() }" />
     </div>
 
-    <el-drawer v-model="drawer" :title="'构建日志'" size="55%" destroy-on-close>
+    <el-drawer v-model="drawer" :title="'构建日志'" size="55%" destroy-on-close append-to-body>
       <log-view v-if="currentId" kind="build" :id="currentId" :log-url="buildLogUrl(currentId)" />
       <div style="margin-top: 8px" v-if="currentRow">
         <status-tag :status="currentRow.status" />
