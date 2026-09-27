@@ -133,14 +133,35 @@ public class DeployService {
         }
     }
 
+    /** 回滚预览：找到将回退到的历史版本（供确认框展示），无可回滚版本时返回 {none:true} */
+    public Map<String, Object> rollbackPreview(String deploymentId) {
+        Deployment target = deploymentRepository.findById(deploymentId)
+                .orElseThrow(() -> ApiException.notFound("部署记录"));
+        Deployment previous = findPreviousSuccess(target);
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (previous == null) {
+            result.put("none", true);
+            return result;
+        }
+        result.put("none", false);
+        result.put("version", previous.getArtifact().getVersion());
+        result.put("deployedAt", String.valueOf(previous.getCreatedAt()));
+        result.put("operator", previous.getOperator());
+        return result;
+    }
+
+    private Deployment findPreviousSuccess(Deployment target) {
+        return deploymentRepository
+                .findFirstByProjectIdAndEnvironmentIdAndStatusAndCreatedAtBeforeOrderByCreatedAtDesc(
+                        target.getProject().getId(), target.getEnvironment().getId(), TaskStatus.SUCCESS, target.getCreatedAt());
+    }
+
     /** 回滚：撤销某次部署，回到它之前同项目同环境的最近一次成功版本。 */
     public Deployment rollback(String deploymentId) {
         Deployment target = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> ApiException.notFound("部署记录"));
         if (target.getStatus() != TaskStatus.SUCCESS) throw new ApiException("仅成功的部署可回滚");
-        Deployment previous = deploymentRepository
-                .findFirstByProjectIdAndEnvironmentIdAndStatusAndCreatedAtBeforeOrderByCreatedAtDesc(
-                        target.getProject().getId(), target.getEnvironment().getId(), TaskStatus.SUCCESS, target.getCreatedAt());
+        Deployment previous = findPreviousSuccess(target);
         if (previous == null) throw new ApiException("没有更早的成功部署可回滚");
         Integer revision = null;
         if (target.getEnvironment().getKind() == EnvKind.K8S && previous.getResult() != null

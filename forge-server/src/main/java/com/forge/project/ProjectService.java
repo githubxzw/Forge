@@ -1,9 +1,13 @@
 package com.forge.project;
 
 import com.forge.common.ApiException;
+import com.forge.config.ForgeProperties;
+import com.forge.domain.Artifact;
+import com.forge.domain.ArtifactType;
 import com.forge.domain.Project;
 import com.forge.domain.ProjectRepository;
 import com.forge.domain.ProjectType;
+import com.forge.build.TarUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +18,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ProjectService {
     private final ProjectRepository repository;
+    private final com.forge.domain.BuildTaskRepository buildTaskRepository;
+    private final com.forge.domain.ArtifactRepository artifactRepository;
+    private final com.forge.domain.DeploymentRepository deploymentRepository;
+    private final ForgeProperties props;
 
     public List<Project> list() {
         return repository.findAll();
@@ -50,8 +58,23 @@ public class ProjectService {
         return repository.save(p);
     }
 
+    /** 级联删除：部署记录 → 制品（含文件）→ 构建任务 → 项目 */
     @Transactional
     public void delete(String id) {
+        require(id);
+        deploymentRepository.deleteAll(deploymentRepository.findByProjectId(id));
+        List<Artifact> artifacts = artifactRepository.findByProjectId(id);
+        for (Artifact a : artifacts) {
+            if (a.getType() != ArtifactType.IMAGE) {
+                try {
+                    java.nio.file.Path file = props.artifactPath().resolve(a.getRef());
+                    java.nio.file.Files.deleteIfExists(file);
+                    if (file.getParent() != null) TarUtils.deleteDir(file.getParent());
+                } catch (Exception ignore) {}
+            }
+        }
+        artifactRepository.deleteAll(artifacts);
+        buildTaskRepository.deleteAll(buildTaskRepository.findByProjectId(id));
         repository.deleteById(id);
     }
 

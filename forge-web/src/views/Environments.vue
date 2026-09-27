@@ -15,13 +15,19 @@
       <el-table-column label="连接信息" min-width="260">
         <template #="{ row }"><span class="mono muted">{{ connSummary(row) }}</span></template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="200">
         <template #="{ row }">
           <el-button size="small" type="success" plain :loading="testing === row.id" @click="test(row)">测试</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-empty :image-size="80" description="还没有环境，先接入你的云服务器">
+          <el-button type="primary" @click="openEdit(null)">创建第一个环境</el-button>
+          <el-button @click="$router.push('/manual')">查看手册</el-button>
+        </el-empty>
+      </template>
     </el-table>
 
     <el-dialog v-model="dialog" :title="form.id ? '编辑环境' : '新建环境'" width="620px">

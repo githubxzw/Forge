@@ -6,8 +6,17 @@
         <p class="desc">从零到一：把你的项目通过 Forge 构建并部署到服务器</p>
       </div>
     </div>
+    <el-anchor :offset="70" class="manual-anchor" direction="vertical">
+      <el-anchor-link href="#s1" title="① 快速上手" />
+      <el-anchor-link href="#s2" title="② 凭据管理" />
+      <el-anchor-link href="#s3" title="③ 环境管理" />
+      <el-anchor-link href="#s4" title="④ 项目管理" />
+      <el-anchor-link href="#s5" title="⑤ 构建与制品" />
+      <el-anchor-link href="#s6" title="⑥ 部署与回滚" />
+      <el-anchor-link href="#s7" title="⑦ 常见问题" />
+    </el-anchor>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s1" shadow="never">
       <h3><span class="idx">1</span>快速上手 · 五步走</h3>
       <el-steps :active="5" align-center style="margin-top: 18px">
         <el-step title="建凭据" description="SSH 私钥 / Token" />
@@ -23,7 +32,7 @@
       </p>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s2" shadow="never">
       <h3><span class="idx">2</span>凭据管理 —— 一切连接的钥匙</h3>
       <p>所有敏感信息（服务器密码、私钥、kubeconfig）都集中在这里，<b>AES-256-GCM 加密落库</b>，保存后不可再查看原文。</p>
       <el-table :data="credTypes" size="small" style="margin-top: 8px">
@@ -37,7 +46,7 @@
       </p>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s3" shadow="never">
       <h3><span class="idx">3</span>环境管理 —— 告诉 Forge 部署到哪里</h3>
       <el-table :data="envTypes" size="small" style="margin-top: 8px">
         <el-table-column prop="kind" label="环境类型" width="170" />
@@ -61,7 +70,7 @@
 └── logs/</div>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s4" shadow="never">
       <h3><span class="idx">4</span>项目管理 —— 注册你的 Git 仓库</h3>
       <p>
         在「项目管理」→「新建项目」中填写：<b>项目编码</b>（唯一，用作镜像名/目录名，建议小写加中划线）、
@@ -81,7 +90,7 @@
       </el-table>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s5" shadow="never">
       <h3><span class="idx">5</span>构建与制品 —— 四类产物一次搞定</h3>
       <p>项目详情页点「发起构建」，勾选本次需要的目标：</p>
       <el-table :data="targets" size="small" style="margin-top: 8px">
@@ -95,7 +104,7 @@
       </p>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s6" shadow="never">
       <h3><span class="idx">6</span>部署与回滚 —— 一键上线，一键后悔</h3>
       <p>
         「部署中心」选择 项目 → 环境 → 制品，点「部署」。环境类型决定可选的制品（SSH 只能选前端/后端包，
@@ -110,7 +119,7 @@
       </ul>
     </el-card>
 
-    <el-card class="section" shadow="never">
+    <el-card class="section" id="s7" shadow="never">
       <h3><span class="idx">7</span>常见问题</h3>
       <p><b>Q：构建时报 git/docker/mvn 找不到？</b><br />
         Forge 在「系统设置」页探测构建机工具链。缺什么装什么：构建机需要 git（必需）+ 对应构建工具；docker/helm 只在构建镜像或部署 K8s 时需要。</p>

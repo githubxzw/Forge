@@ -22,13 +22,18 @@
       <el-table-column prop="stack" label="技术栈" width="120" />
       <el-table-column prop="repoUrl" label="仓库" min-width="240" show-overflow-tooltip />
       <el-table-column prop="defaultBranch" label="默认分支" width="100" />
-      <el-table-column label="操作" width="210" fixed="right">
+      <el-table-column label="操作" width="210">
         <template #="{ row }">
           <el-button size="small" @click="$router.push(`/projects/${row.id}`)">详情</el-button>
           <el-button size="small" type="primary" plain @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-empty :image-size="80" description="还没有项目，从注册一个 Git 仓库开始">
+          <el-button type="primary" @click="openEdit(null)">创建第一个项目</el-button>
+        </el-empty>
+      </template>
     </el-table>
 
     <el-dialog v-model="dialog" :title="form.id ? '编辑项目' : '新建项目'" width="640px">
@@ -151,7 +156,8 @@ async function save() {
 }
 
 async function remove(row: any) {
-  await ElMessageBox.confirm(`确认删除项目「${row.name}」？构建/部署历史将一并失效。`, '删除确认', { type: 'warning' })
+  await ElMessageBox.confirm(
+    `确认删除项目「${row.name}」？其构建/部署历史与制品文件将一并删除，不可恢复。`, '删除确认', { type: 'warning' })
   await deleteProject(row.id)
   ElMessage.success('已删除')
   load()

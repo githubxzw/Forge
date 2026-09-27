@@ -17,6 +17,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EnvironmentService {
     private final EnvironmentRepository repository;
+    private final com.forge.domain.DeploymentRepository deploymentRepository;
     private final com.forge.infra.ssh.SshService sshService;
 
     public List<Environment> list() {
@@ -44,6 +45,10 @@ public class EnvironmentService {
 
     @Transactional
     public void delete(String id) {
+        // 有部署历史的环境不允许删除（外键引用 + 审计完整性）
+        if (deploymentRepository.existsByEnvironmentId(id)) {
+            throw new ApiException("该环境存在部署历史，为保证审计完整性不允许删除");
+        }
         repository.deleteById(id);
     }
 

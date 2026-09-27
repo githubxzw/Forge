@@ -54,7 +54,7 @@
           <el-table-column prop="type" label="类型" width="110" />
           <el-table-column prop="version" label="版本" min-width="200" show-overflow-tooltip />
           <el-table-column prop="ref" label="位置/镜像" min-width="220" show-overflow-tooltip />
-          <el-table-column label="大小" width="100"><template #="{ row }">{{ row.size ? (row.size / 1024 / 1024).toFixed(2) + ' MB' : '-' }}</template></el-table-column>
+          <el-table-column label="大小" width="100"><template #="{ row }" class="num">{{ fmtSize(row.size) }}</template></el-table-column>
           <el-table-column label="时间" width="160"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
         </el-table>
       </el-tab-pane>
@@ -127,6 +127,12 @@ const targets = ref<string[]>([])
 const starting = ref(false)
 
 const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm:ss') : '-')
+const fmtSize = (n?: number | null) => {
+  if (n == null) return '-'
+  if (n < 1024) return n + ' B'
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'
+  return (n / 1048576).toFixed(2) + ' MB'
+}
 const duration = (row: any) => {
   if (!row.startedAt || !row.finishedAt) return '-'
   return Math.max(1, Math.round((new Date(row.finishedAt).getTime() - new Date(row.startedAt).getTime()) / 1000)) + 's'

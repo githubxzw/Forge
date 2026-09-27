@@ -5,7 +5,15 @@
         <h2>控制台</h2>
         <p class="desc">构建与部署的实时概览</p>
       </div>
+      <div class="actions">
+        <el-button :icon="Folder" @click="$router.push('/projects')">去构建</el-button>
+        <el-button :icon="Promotion" @click="$router.push('/deployments')">去部署</el-button>
+        <el-button :icon="Reading" @click="$router.push('/manual')">使用手册</el-button>
+      </div>
     </div>
+
+    <el-alert v-if="s.defaultPassword" type="error" :closable="false" style="margin-bottom: 14px"
+              title="安全警告：管理员仍在使用默认密码 admin123，部署到公网前请立即在右上角「系统设置」中修改" show-icon />
 
     <el-row :gutter="14">
       <el-col :span="6" v-for="c in cards" :key="c.key">
@@ -16,6 +24,33 @@
               <div class="num">{{ s[c.key] ?? '-' }}</div>
               <div class="label">{{ c.label }}</div>
             </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="14" style="margin-top: 14px">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <div class="week-row">
+            <div>
+              <div class="week-title">近 7 天构建</div>
+              <div class="week-num"><span class="num">{{ s.builds7?.ok ?? 0 }}</span><span class="muted"> / {{ s.builds7?.total ?? 0 }} 成功</span></div>
+            </div>
+            <el-progress type="circle" :width="58" :stroke-width="8"
+                         :percentage="s.builds7?.total ? Math.round((s.builds7.ok / s.builds7.total) * 100) : 0" />
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
+          <div class="week-row">
+            <div>
+              <div class="week-title">近 7 天部署</div>
+              <div class="week-num"><span class="num">{{ s.deploys7?.ok ?? 0 }}</span><span class="muted"> / {{ s.deploys7?.total ?? 0 }} 成功</span></div>
+            </div>
+            <el-progress type="circle" :width="58" :stroke-width="8"
+                         :percentage="s.deploys7?.total ? Math.round((s.deploys7.ok / s.deploys7.total) * 100) : 0" />
           </div>
         </el-card>
       </el-col>
@@ -62,7 +97,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Folder, Cpu, Box, Promotion } from '@element-plus/icons-vue'
+import { Folder, Cpu, Box, Promotion, Reading } from '@element-plus/icons-vue'
 import { stats } from '../api/api'
 import dayjs from 'dayjs'
 import StatusTag from '../components/StatusTag.vue'
@@ -81,4 +116,8 @@ const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
 
 <style scoped>
 .list-head { display: flex; align-items: center; justify-content: space-between; }
+.week-row { display: flex; align-items: center; justify-content: space-between; }
+.week-title { color: #7c86a2; font-size: 13px; margin-bottom: 8px; }
+.week-num .num { font-size: 30px; font-weight: 800; }
+.week-num .muted { margin-left: 6px; }
 </style>

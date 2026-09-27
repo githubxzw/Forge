@@ -17,12 +17,15 @@
       <el-table-column label="创建时间" width="180">
         <template #="{ row }"><span class="muted">{{ row.createdAt?.replace('T', ' ').slice(0, 19) }}</span></template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="160">
         <template #="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-empty :image-size="80" description="还没有凭据，SSH 私钥 / Token 都存放在这里" />
+      </template>
     </el-table>
 
     <el-dialog v-model="dialog" :title="form.id ? '编辑凭据（留空保留原值）' : '新建凭据'" width="560px">

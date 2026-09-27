@@ -19,15 +19,19 @@
       <el-table-column label="目标" min-width="180">
         <template #="{ row }"><el-tag v-for="t in row.targets" :key="t" size="small" style="margin-right:4px">{{ t }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="状态" width="90"><template #="{ row }"><status-tag :status="row.status" /></template></el-table-column>
-      <el-table-column label="时间" width="160"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="状态" width="84"><template #="{ row }"><status-tag :status="row.status" /></template></el-table-column>
+      <el-table-column label="耗时" width="76"><template #="{ row }" ><span class="muted num">{{ duration(row) }}</span></template></el-table-column>
+      <el-table-column label="时间" width="145"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
+      <el-table-column label="操作" width="180">
         <template #="{ row }">
           <el-button size="small" text type="primary" @click="openLog(row)">日志</el-button>
           <el-button v-if="row.status === 'RUNNING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
           <el-button v-if="row.status === 'FAILED' || row.status === 'SUCCESS'" size="small" text @click="rebuild(row)">重新构建</el-button>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-empty :image-size="60" description="还没有构建任务，去项目详情发起一次构建吧" />
+      </template>
     </el-table>
     <div style="margin-top: 12px; text-align: right">
       <el-pagination background layout="prev, pager, next" :total="total" :page-size="20"
@@ -67,6 +71,11 @@ const currentRow = ref<any>(null)
 let timer: any = null
 
 const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm:ss') : '-')
+const duration = (row: any) => {
+  if (!row.startedAt || !row.finishedAt) return '-'
+  const sec = Math.round((new Date(row.finishedAt).getTime() - new Date(row.startedAt).getTime()) / 1000)
+  return sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's'
+}
 
 async function load() {
   loading.value = true

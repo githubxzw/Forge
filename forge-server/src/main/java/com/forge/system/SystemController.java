@@ -23,19 +23,30 @@ import java.util.concurrent.TimeUnit;
 public class SystemController {
     private final ForgeProperties props;
 
+    /** 探测结果缓存（mvn/gradle --version 需要起 JVM，单次全量探测要 3-5 秒） */
+    private volatile Map<String, Object> toolsCache;
+    private volatile long toolsCacheAt;
+
     @GetMapping("/info")
     public ApiResult<Map<String, Object>> info() throws IOException {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("dataDir", props.getDataDir());
         info.put("artifactDir", props.getArtifactDir());
         info.put("os", System.getProperty("os.name") + " / " + System.getProperty("os.arch"));
+        info.put("tools", detectAll());
+        return ApiResult.ok(info);
+    }
 
+    private Map<String, Object> detectAll() {
+        Map<String, Object> cached = toolsCache;
+        if (cached != null && System.currentTimeMillis() - toolsCacheAt < 300_000) return cached;
         Map<String, Object> tools = new LinkedHashMap<>();
         for (String tool : List.of("git", "docker", "helm", "kubectl", "node", "npm", "pnpm", "yarn", "mvn", "gradle", "tar")) {
             tools.put(tool, detect(tool));
         }
-        info.put("tools", tools);
-        return ApiResult.ok(info);
+        toolsCache = tools;
+        toolsCacheAt = System.currentTimeMillis();
+        return tools;
     }
 
     private Map<String, Object> detect(String tool) {

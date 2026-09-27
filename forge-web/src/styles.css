@@ -195,6 +195,8 @@ body {
 
 /* ---------- 使用手册 ---------- */
 .manual { max-width: 1100px; }
+.manual-anchor { position: fixed; right: 18px; top: 110px; z-index: 9; }
+@media (max-width: 1500px) { .manual-anchor { display: none; } }
 .manual .section { margin-bottom: 18px; scroll-margin-top: 70px; }
 .manual .section .el-card__body { line-height: 1.85; }
 .manual h3 {

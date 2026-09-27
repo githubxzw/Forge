@@ -42,27 +42,30 @@
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
     <el-table :data="rows" v-loading="loading">
-      <el-table-column label="项目" width="130"><template #="{ row }">{{ row.project?.name }}</template></el-table-column>
-      <el-table-column label="环境" width="130">
-        <template #="{ row }">{{ row.environment?.name }} <span class="muted">({{ row.environment?.kind }})</span></template>
+      <el-table-column label="项目" width="110"><template #="{ row }">{{ row.project?.name }}</template></el-table-column>
+      <el-table-column label="环境" width="128">
+        <template #="{ row }">{{ row.environment?.name }}<div class="muted">{{ row.environment?.kind }}</div></template>
       </el-table-column>
-      <el-table-column prop="artifact.version" label="制品版本" min-width="180" show-overflow-tooltip />
-      <el-table-column label="状态" width="90"><template #="{ row }"><status-tag :status="row.status" /></template></el-table-column>
-      <el-table-column label="回滚自" width="90">
+      <el-table-column prop="artifact.version" label="制品版本" min-width="165" show-overflow-tooltip />
+      <el-table-column label="状态" width="84"><template #="{ row }"><status-tag :status="row.status" /></template></el-table-column>
+      <el-table-column label="回滚自" width="76">
         <template #="{ row }"><el-tag v-if="row.rollbackOf" size="small" type="warning">回滚</el-tag><span v-else>-</span></template>
       </el-table-column>
-      <el-table-column prop="operator" label="操作人" width="100" />
-      <el-table-column label="结果" min-width="180">
+      <el-table-column prop="operator" label="操作人" width="80" />
+      <el-table-column label="结果" min-width="150" show-overflow-tooltip>
         <template #="{ row }"><span class="mono muted">{{ resultSummary(row) }}</span></template>
       </el-table-column>
-      <el-table-column label="时间" width="160"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="时间" width="142"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
+      <el-table-column label="操作" width="172">
         <template #="{ row }">
           <el-button size="small" text type="primary" @click="openLog(row)">日志</el-button>
           <el-button v-if="row.status === 'SUCCESS'" size="small" text type="warning" @click="rollback(row)">回滚</el-button>
           <el-button v-if="row.status === 'RUNNING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-empty :image-size="60" description="还没有部署记录，用上方向导完成第一次部署" />
+      </template>
     </el-table>
     <div style="margin-top: 12px; text-align: right">
       <el-pagination background layout="prev, pager, next" :total="total" :page-size="20"
@@ -113,7 +116,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import {
   listProjects, listEnvironments, listArtifacts, listDeployments,
-  startDeploy, batchDeploy, rollbackDeploy, cancelDeploy, deployLogUrl
+  startDeploy, batchDeploy, rollbackDeploy, rollbackPreview, cancelDeploy, deployLogUrl
 } from '../api/api'
 import StatusTag from '../components/StatusTag.vue'
 import LogView from '../components/LogView.vue'
@@ -149,12 +152,11 @@ const deployableArtifacts = computed(() => {
 const resultSummary = (row: any) => {
   const r = row.result || {}
   const parts: string[] = []
-  if (r.version || r.image) parts.push(r.image || r.version)
   if (r.revision) parts.push('rev ' + r.revision)
   if (r.healthy === true) parts.push('健康✓')
   if (r.skipped) parts.push('未配置健康检查')
   if (row.message) parts.push(row.message)
-  return parts.join(' · ')
+  return parts.join(' · ') || '-'
 }
 
 async function load() {
@@ -178,8 +180,14 @@ async function doDeploy() {
 }
 
 async function rollback(row: any) {
+  const preview = await rollbackPreview(row.id)
+  if (preview.none) {
+    ElMessage.warning('该部署之前没有可回滚的成功版本')
+    return
+  }
   await ElMessageBox.confirm(
-    `回滚「${row.project?.name}」在「${row.environment?.name}」的这次部署？将回退到上一个成功版本。`, '回滚确认', { type: 'warning' })
+    `将把「${row.project?.name}」在「${row.environment?.name}」回滚到版本 ${preview.version}（${fmt(preview.deployedAt)} 由 ${preview.operator || '-'} 部署），确认？`,
+    '回滚确认', { type: 'warning' })
   const dep = await rollbackDeploy(row.id)
   ElMessage.success('回滚任务已提交')
   await load()

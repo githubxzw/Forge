@@ -40,6 +40,11 @@
               <div class="muted">部署成功/失败后推送消息；发送失败不影响部署本身</div>
             </el-form-item>
             <el-form-item>
+              <el-button :loading="testing" :disabled="s.notifyType === 'none' || !s.notifyWebhook" @click="sendTest">
+                发送测试通知
+              </el-button>
+            </el-form-item>
+            <el-form-item>
               <el-button type="primary" @click="save">保存设置</el-button>
             </el-form-item>
           </el-form>
@@ -81,12 +86,22 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSettings, updateSettings, systemInfo, changePassword } from '../api/api'
+import { getSettings, updateSettings, systemInfo, changePassword, notifyTest } from '../api/api'
 
 const s = ref<Record<string, string>>({})
 const info = ref<any>({})
 const oldPwd = ref('')
 const newPwd = ref('')
+const testing = ref(false)
+
+async function sendTest() {
+  testing.value = true
+  try {
+    await notifyTest()
+    ElMessage.success('测试通知已发送，请到群里查看')
+  } catch (e) {}
+  testing.value = false
+}
 
 const toolRows = computed(() => {
   const tools = info.value.tools || {}

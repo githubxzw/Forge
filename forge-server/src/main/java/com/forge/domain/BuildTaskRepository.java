@@ -11,4 +11,6 @@ public interface BuildTaskRepository extends JpaRepository<BuildTask, String> {
     Page<BuildTask> findByOrderByCreatedAtDesc(Pageable pageable);
     boolean existsByProjectIdAndStatusIn(String projectId, List<TaskStatus> statuses);
     List<BuildTask> findByStatusIn(List<TaskStatus> statuses);
+    List<BuildTask> findByProjectId(String projectId);
+    List<BuildTask> findByCreatedAtAfter(java.time.LocalDateTime time);
 }

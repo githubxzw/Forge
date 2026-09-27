@@ -19,11 +19,12 @@ public class NotifyService {
     private final SettingService settingService;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-    public void send(String title, String message) {
+    /** 发送通知。返回 null 表示成功，否则返回错误描述（不抛异常，避免影响主流程） */
+    public String send(String title, String message) {
         try {
             String url = settingService.get("notifyWebhook");
             String type = settingService.get("notifyType");
-            if (url == null || url.isBlank() || type == null || "none".equals(type)) return;
+            if (url == null || url.isBlank() || type == null || "none".equals(type)) return null;
             String payload = switch (type) {
                 case "dingtalk", "wecom" -> "{\"msgtype\":\"text\",\"text\":{\"content\":"
                         + JsonUtils.toJson(title + "\n" + message) + "}}";
@@ -39,9 +40,12 @@ public class NotifyService {
             HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() >= 300) {
                 log.warn("通知发送失败: HTTP {} {}", resp.statusCode(), resp.body());
+                return "HTTP " + resp.statusCode() + (resp.body() == null ? "" : " " + resp.body());
             }
+            return null;
         } catch (Exception e) {
             log.warn("通知发送失败: {}", e.getMessage());
+            return e.getMessage();
         }
     }
 }

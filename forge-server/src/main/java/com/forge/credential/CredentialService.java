@@ -16,6 +16,8 @@ import java.util.Map;
 public class CredentialService {
     private final CredentialRepository repository;
     private final CryptoService cryptoService;
+    private final com.forge.domain.ProjectRepository projectRepository;
+    private final com.forge.domain.EnvironmentRepository environmentRepository;
 
     public List<Map<String, Object>> list() {
         return repository.findAll().stream().map(c -> {
@@ -47,7 +49,25 @@ public class CredentialService {
         repository.save(c);
     }
 
+    /** 删除前做引用检查：被项目（Git 拉取）或环境（SSH/kubeconfig）引用时不允许删除 */
     public void delete(String id) {
+        java.util.List<String> refs = new java.util.ArrayList<>();
+        projectRepository.findAll().stream()
+                .filter(p -> id.equals(p.getGitCredentialId()))
+                .forEach(p -> refs.add("项目「" + p.getName() + "」的拉取凭据"));
+        environmentRepository.findAll().forEach(e -> {
+            Map<String, Object> conn = e.getConnConfig();
+            if (conn == null) return;
+            Object credId = conn.get("credentialId");
+            Object kubeId = conn.get("kubeconfigCredentialId");
+            if (id.equals(credId == null ? null : String.valueOf(credId))
+                    || id.equals(kubeId == null ? null : String.valueOf(kubeId))) {
+                refs.add("环境「" + e.getName() + "」的连接凭据");
+            }
+        });
+        if (!refs.isEmpty()) {
+            throw new ApiException("该凭据仍被引用（" + String.join("、", refs) + "），请先在对应项目/环境中解除引用");
+        }
         repository.deleteById(id);
     }
 

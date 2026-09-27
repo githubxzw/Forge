@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/deployments")
@@ -47,6 +48,12 @@ public class DeploymentController {
     @PostMapping("/{id}/rollback")
     public ApiResult<Deployment> rollback(@PathVariable String id) {
         return ApiResult.ok(deployService.rollback(id));
+    }
+
+    /** 回滚预览：告知将回退到哪个版本（确认框展示用） */
+    @GetMapping("/{id}/rollback-preview")
+    public ApiResult<Map<String, Object>> rollbackPreview(@PathVariable String id) {
+        return ApiResult.ok(deployService.rollbackPreview(id));
     }
 
     @PostMapping("/{id}/cancel")

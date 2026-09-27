@@ -40,6 +40,8 @@ export const buildLogUrl = (id: string) => `/api/builds/${id}/log`
 export const listArtifacts = (projectId: string | null, type: string | null, page = 0, size = 50) =>
   unwrap<any>(http.get('/artifacts', { params: { projectId: projectId || undefined, type: type || undefined, page, size } }))
 export const deleteArtifact = (id: string) => unwrap(http.delete(`/artifacts/${id}`))
+export const batchDeleteArtifacts = (ids: string[]) =>
+  unwrap<{ deleted: number; skipped: number }>(http.post('/artifacts/batch-delete', { ids }))
 export const pushArtifact = (id: string) => unwrap(http.post(`/artifacts/${id}/push`))
 export const artifactDownloadUrl = (id: string) => `/api/artifacts/${id}/download`
 
@@ -49,6 +51,9 @@ export const startDeploy = (projectId: string, envId: string, artifactId: string
 export const batchDeploy = (envId: string, items: { projectId: string; artifactId: string }[]) =>
   unwrap<any[]>(http.post('/deployments/batch', { envId, items }))
 export const rollbackDeploy = (id: string) => unwrap<any>(http.post(`/deployments/${id}/rollback`))
+export const rollbackPreview = (id: string) =>
+  unwrap<{ none: boolean; version?: string; deployedAt?: string; operator?: string }>(
+    http.get(`/deployments/${id}/rollback-preview`))
 export const cancelDeploy = (id: string) => unwrap(http.post(`/deployments/${id}/cancel`))
 export const listDeployments = (projectId: string | null, envId: string | null, page = 0, size = 20) =>
   unwrap<any>(http.get('/deployments', { params: { projectId: projectId || undefined, envId: envId || undefined, page, size } }))
@@ -58,5 +63,6 @@ export const deployLogUrl = (id: string) => `/api/deployments/${id}/log`
 // ---------- 设置/系统/统计 ----------
 export const getSettings = () => unwrap<Record<string, string>>(http.get('/settings'))
 export const updateSettings = (values: Record<string, string>) => unwrap(http.put('/settings', values))
+export const notifyTest = () => unwrap(http.post('/settings/notify-test'))
 export const systemInfo = () => unwrap<any>(http.get('/system/info'))
 export const stats = () => unwrap<any>(http.get('/stats'))

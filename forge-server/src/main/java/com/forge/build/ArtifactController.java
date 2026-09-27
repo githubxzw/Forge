@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/artifacts")
@@ -50,6 +51,23 @@ public class ArtifactController {
         Artifact artifact = artifactService.require(id);
         artifactService.delete(artifact);
         return ApiResult.ok();
+    }
+
+    /** 批量删除：被部署引用的制品自动跳过 */
+    @PostMapping("/batch-delete")
+    public ApiResult<Map<String, Object>> batchDelete(@RequestBody Map<String, List<String>> body) {
+        List<String> ids = body.getOrDefault("ids", List.of());
+        int deleted = 0;
+        List<String> skipped = new java.util.ArrayList<>();
+        for (String id : ids) {
+            try {
+                artifactService.delete(artifactService.require(id));
+                deleted++;
+            } catch (Exception e) {
+                skipped.add(id);
+            }
+        }
+        return ApiResult.ok(Map.of("deleted", deleted, "skipped", skipped.size()));
     }
 
     @GetMapping("/{id}/download")
