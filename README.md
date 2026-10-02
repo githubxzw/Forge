@@ -49,7 +49,7 @@
 
 ```bash
 java -jar forge-server/target/forge-server.jar
-# 默认 http://localhost:8080 ，账号 admin / admin123
+# 默认 http://localhost:9090 ，账号 admin / admin123
 ```
 
 常用环境变量：
@@ -60,7 +60,7 @@ java -jar forge-server/target/forge-server.jar
 | `FORGE_ADMIN_USERNAME` / `FORGE_ADMIN_PASSWORD` | 初始管理员 | admin / admin123 |
 | `FORGE_SECRET_KEY` | 凭据加密密钥（32 字节 Base64），不设则自动生成存于数据目录 | 自动 |
 | `FORGE_BUILD_PARALLELISM` | 构建并行数 | 2 |
-| `--server.port` | HTTP 端口 | 8080 |
+| `--server.port` | HTTP 端口 | 9090 |
 
 ### 3. 第一次使用
 
@@ -73,7 +73,7 @@ java -jar forge-server/target/forge-server.jar
 前端开发模式（可选）：
 
 ```bash
-cd forge-web && npm install && npm run dev   # vite 代理 /api、/ws 到 8080
+cd forge-web && npm install && npm run dev   # vite 代理 /api、/ws 到 9090
 ```
 
 ## 部署 Forge 到云服务器（生产建议）

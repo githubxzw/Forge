@@ -12,7 +12,7 @@ Environment=FORGE_DATA_DIR=/opt/forge/data
 Environment=FORGE_ADMIN_PASSWORD=change-me-on-first-run
 # 公网部署务必改为你的域名
 # Environment=FORGE_ALLOWED_ORIGINS=https://forge.example.com
-ExecStart=/usr/bin/java -Xms256m -Xmx768m -jar /opt/forge/forge-server.jar --server.port=8080
+ExecStart=/usr/bin/java -Xms256m -Xmx768m -jar /opt/forge/forge-server.jar --server.port=9090
 Restart=always
 RestartSec=5
 SuccessExitStatus=143

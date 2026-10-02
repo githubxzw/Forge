@@ -1,6 +1,10 @@
 package com.forge.infra.log;
 
+import com.forge.build.ArtifactService;
 import com.forge.config.ForgeProperties;
+import com.forge.domain.ArtifactType;
+import com.forge.domain.Project;
+import com.forge.domain.ProjectRepository;
 import com.forge.setting.SettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,16 +19,23 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.stream.Stream;
 
-/** 按保留天数定时清理构建/部署日志（每天 03:30 执行；keepLogDays=0 表示永久保留） */
+/** 定时清理：构建/部署日志（keepLogDays）+ 制品保留策略（keepArtifacts），每天 03:30 执行 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class LogCleanup {
     private final ForgeProperties props;
     private final SettingService settingService;
+    private final ProjectRepository projectRepository;
+    private final ArtifactService artifactService;
 
     @Scheduled(cron = "0 30 3 * * ?")
     public void clean() {
+        cleanLogs();
+        cleanArtifacts();
+    }
+
+    private void cleanLogs() {
         int days;
         try {
             days = Integer.parseInt(settingService.get("keepLogDays"));
@@ -53,5 +64,25 @@ public class LogCleanup {
             return;
         }
         if (deleted > 0) log.info("日志清理完成，删除 {} 个超过 {} 天的日志文件", deleted, days);
+    }
+
+    /** 不再活跃的项目旧制品也会按保留策略清理 */
+    private void cleanArtifacts() {
+        int keep;
+        try {
+            keep = Integer.parseInt(settingService.get("keepArtifacts"));
+        } catch (Exception e) {
+            return;
+        }
+        if (keep <= 0) return;
+        for (Project p : projectRepository.findAll()) {
+            for (ArtifactType type : ArtifactType.values()) {
+                try {
+                    artifactService.cleanupByRetention(p.getId(), type);
+                } catch (Exception e) {
+                    log.warn("制品清理失败: project={} type={} - {}", p.getCode(), type, e.getMessage());
+                }
+            }
+        }
     }
 }

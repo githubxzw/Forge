@@ -31,7 +31,7 @@ public class ArtifactService {
     }
 
     /** 保留策略：每项目每类型只保留最近 N 个（未被部署引用的才清理），keepArtifacts=0 表示永久 */
-    private void cleanupByRetention(String projectId, ArtifactType type) {
+    public void cleanupByRetention(String projectId, ArtifactType type) {
         int keep;
         try {
             keep = Integer.parseInt(settingService.get("keepArtifacts"));

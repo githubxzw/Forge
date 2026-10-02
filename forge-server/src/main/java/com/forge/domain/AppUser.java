@@ -23,6 +23,9 @@ public class AppUser {
     @Column(nullable = false)
     private String password;
 
+    /** 最近一次修改密码的时间：该时间之前签发的 JWT 全部失效 */
+    private LocalDateTime passwordChangedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

@@ -81,6 +81,7 @@ public class AuthController {
         if (newPwd == null || newPwd.length() < 6) throw new ApiException("新密码长度至少 6 位");
         if (!passwordEncoder.matches(oldPwd, user.getPassword())) throw new ApiException("原密码错误");
         user.setPassword(passwordEncoder.encode(newPwd));
+        user.setPasswordChangedAt(java.time.LocalDateTime.now()); // 使之前签发的 JWT 全部失效
         userRepository.save(user);
         return ApiResult.ok();
     }

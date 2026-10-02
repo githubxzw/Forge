@@ -57,10 +57,13 @@ public class JwtService {
     }
 
     public Optional<String> validate(String token) {
+        return parse(token).map(Claims::getSubject);
+    }
+
+    /** 完整解析：供需要签发时间（密码失效比对）的调用方使用 */
+    public Optional<Claims> parse(String token) {
         try {
-            Claims claims = Jwts.parser().verifyWith(key).build()
-                    .parseSignedClaims(token).getPayload();
-            return Optional.ofNullable(claims.getSubject());
+            return Optional.of(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload());
         } catch (Exception e) {
             return Optional.empty();
         }

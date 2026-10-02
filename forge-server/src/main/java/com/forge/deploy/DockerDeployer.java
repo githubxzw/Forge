@@ -48,6 +48,7 @@ public class DockerDeployer implements Deployer {
             try (SshExecutor ssh = ctx.getSshService().connect(ctx.getEnvironment())) {
                 log.line("[forge] 连接 " + host + " 成功");
                 ssh.uploadText(content, composeFile, log);
+                ensureImageOnRemote(ctx, ssh);
                 runRemote(ssh, composeFile, code, ctx);
             }
         } else {
@@ -72,6 +73,51 @@ public class DockerDeployer implements Deployer {
         ssh.execOrThrow("docker compose -p " + code + " -f " + composeFile + " up -d", log, 1800);
         log.line("[forge] 容器已启动");
         ssh.exec("docker compose -p " + code + " ps", log, 60);
+    }
+
+    /**
+     * 确保镜像在目标主机可用：
+     * 1. 制品来自配置的 registry → 远端 docker pull（失败则降级）；
+     * 2. 无 registry → 构建机 docker save + SFTP 传输 + 远端 docker load。
+     */
+    private void ensureImageOnRemote(DeployContext ctx, SshExecutor ssh) {
+        LogSink log = ctx.getLog();
+        String ref = ctx.getArtifact().getRef();
+        String registry = ctx.getSettings().get("registry");
+        boolean fromRegistry = registry != null && !registry.isBlank() && ref.startsWith(registry + "/");
+        if (fromRegistry) {
+            log.line("[forge] 在目标主机拉取镜像: " + ref);
+            try {
+                ssh.execOrThrow("docker pull " + ref, log, 1800);
+                log.line("[forge] 镜像拉取成功");
+                return;
+            } catch (Exception e) {
+                log.line("[forge] 远端拉取失败（" + e.getMessage() + "），降级为本地导出传输");
+            }
+        }
+        log.line("[forge] 本机导出镜像 " + ref + "（未配置镜像仓库或拉取失败）");
+        Path tmp;
+        try {
+            tmp = Files.createTempFile("forge-image-", ".tar.gz");
+        } catch (Exception e) {
+            throw new ApiException(500, "创建临时文件失败: " + e.getMessage());
+        }
+        try {
+            // docker save 管道 gzip 压缩后落盘
+            ProcessRunner.run(List.of("sh", "-c", "docker save " + ref + " | gzip > " + tmp),
+                    null, null, log, null, 1800);
+            long mb = Files.size(tmp) / 1048576;
+            log.line("[forge] 上传镜像（约 " + mb + " MB）...");
+            ssh.upload(tmp, "/tmp/forge-image.tar.gz", log);
+            ssh.execOrThrow("docker load -i /tmp/forge-image.tar.gz && rm -f /tmp/forge-image.tar.gz", log, 1800);
+            log.line("[forge] 镜像已在目标主机就绪");
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(500, "镜像传输失败: " + e.getMessage());
+        } finally {
+            try { Files.deleteIfExists(tmp); } catch (Exception ignore) {}
+        }
     }
 
     private void runLocal(String composeFile, String code, DeployContext ctx) {

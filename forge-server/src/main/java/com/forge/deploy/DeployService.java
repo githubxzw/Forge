@@ -82,6 +82,13 @@ public class DeployService {
         private String artifactId;
     }
 
+    /** 同环境并发保护：同一台目标机同时只能有一个部署（软链切换/容器启停会互相踩踏） */
+    private void assertEnvIdle(String envId) {
+        if (deploymentRepository.existsByEnvironmentIdAndStatusIn(envId, List.of(TaskStatus.PENDING, TaskStatus.RUNNING))) {
+            throw new ApiException("该环境有正在执行或排队的部署，请等待完成后再提交");
+        }
+    }
+
     public Deployment start(String projectId, String envId, String artifactId) {
         Project project = projectService.require(projectId);
         Environment env = environmentService.require(envId);
@@ -90,6 +97,7 @@ public class DeployService {
         if (!artifact.getProject().getId().equals(projectId)) {
             throw new ApiException("制品不属于该项目");
         }
+        assertEnvIdle(envId);
         return createAndSubmit(project, env, artifact, null, null);
     }
 
@@ -99,6 +107,7 @@ public class DeployService {
         Environment env = environmentService.require(envId);
         deployers.stream().filter(d -> d.kind() == env.getKind()).findFirst()
                 .orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
+        assertEnvIdle(envId);
 
         List<Deployment> created = new ArrayList<>();
         for (BatchItem item : items) {
@@ -161,6 +170,7 @@ public class DeployService {
         Deployment target = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> ApiException.notFound("部署记录"));
         if (target.getStatus() != TaskStatus.SUCCESS) throw new ApiException("仅成功的部署可回滚");
+        assertEnvIdle(target.getEnvironment().getId());
         Deployment previous = findPreviousSuccess(target);
         if (previous == null) throw new ApiException("没有更早的成功部署可回滚");
         Integer revision = null;
