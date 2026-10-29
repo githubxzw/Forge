@@ -65,8 +65,8 @@ public class SshDeployer implements Deployer {
                 ssh.execOrThrow("chmod +x " + versionDir + "/start.sh", log, 30);
             }
 
-            // 清理旧 release（保留最近 keep 个，按修改时间）
-            ssh.execOrThrow("cd " + releases + " && ls -1t | tail -n +" + (keep + 1) + " | xargs -r rm -rf", log, 60);
+            // 清理旧 release（保留最近 keep 个，按修改时间；排除 current 软链指向的目录，防回滚后误删在用版本）
+            ssh.execOrThrow(cleanupCommand(releases, deployDir + "/current", keep), log, 60);
 
             // 停止 → 软链 → 启动
             restart(ssh, ctx, deployDir, systemd, "stop");
@@ -79,6 +79,17 @@ public class SshDeployer implements Deployer {
             result.put("mode", type == ArtifactType.TAR ? "static" : "jar");
             return result;
         }
+    }
+
+    /**
+     * 生成受保护的旧 release 清理命令：保留最近 keep 个，同时把 current 软链指向的目录
+     * 从删除名单排除（回滚后 current 可能指向较旧的版本，裸按时间清理会删掉正在服务的版本）。
+     */
+    static String cleanupCommand(String releases, String currentLink, int keep) {
+        return "CUR=$(readlink " + currentLink + " 2>/dev/null || true); "
+                + "cd " + releases + " && ls -1t | tail -n +" + (keep + 1)
+                + " | if [ -n \"$CUR\" ]; then grep -v -F \"$(basename \"$CUR\")\"; else cat; fi"
+                + " | xargs -r rm -rf";
     }
 
     private void restart(SshExecutor ssh, DeployContext ctx, String deployDir, String systemd, String action) {

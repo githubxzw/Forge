@@ -25,7 +25,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.locks.ReentrantLock;
 
 /** 部署编排：落库 → 线程池执行（Deployer.deploy → 健康检查 → 更新状态 → 通知）；回滚生成新部署记录；支持批量顺序部署 */
 @Slf4j
@@ -82,10 +84,26 @@ public class DeployService {
         private String artifactId;
     }
 
+    /** 同环境串行锁：assertEnvIdle 是 check-then-act，并发提交会同时通过检查互相踩踏 */
+    private final ConcurrentHashMap<String, ReentrantLock> envLocks = new ConcurrentHashMap<>();
+
     /** 同环境并发保护：同一台目标机同时只能有一个部署（软链切换/容器启停会互相踩踏） */
     private void assertEnvIdle(String envId) {
         if (deploymentRepository.existsByEnvironmentIdAndStatusIn(envId, List.of(TaskStatus.PENDING, TaskStatus.RUNNING))) {
             throw new ApiException("该环境有正在执行或排队的部署，请等待完成后再提交");
+        }
+    }
+
+    /** 「检查空闲 + 建记录 + 提交执行」整体持同环境锁，消除竞态窗口 */
+    private Deployment lockedCreateAndSubmit(Project project, Environment env, Artifact artifact,
+                                             String rollbackOf, Integer rollbackRevision) {
+        ReentrantLock lock = envLocks.computeIfAbsent(env.getId(), k -> new ReentrantLock());
+        lock.lock();
+        try {
+            assertEnvIdle(env.getId());
+            return createAndSubmit(project, env, artifact, rollbackOf, rollbackRevision);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -97,8 +115,7 @@ public class DeployService {
         if (!artifact.getProject().getId().equals(projectId)) {
             throw new ApiException("制品不属于该项目");
         }
-        assertEnvIdle(envId);
-        return createAndSubmit(project, env, artifact, null, null);
+        return lockedCreateAndSubmit(project, env, artifact, null, null);
     }
 
     /** 批量顺序部署：同一环境逐个部署，前序失败即中止，剩余标记"已取消" */
@@ -107,21 +124,27 @@ public class DeployService {
         Environment env = environmentService.require(envId);
         deployers.stream().filter(d -> d.kind() == env.getKind()).findFirst()
                 .orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
-        assertEnvIdle(envId);
 
-        List<Deployment> created = new ArrayList<>();
-        for (BatchItem item : items) {
-            Project project = projectService.require(item.getProjectId());
-            Artifact artifact = artifactRepository.findById(item.getArtifactId())
-                    .orElseThrow(() -> ApiException.notFound("制品"));
-            if (!artifact.getProject().getId().equals(item.getProjectId())) {
-                throw new ApiException("制品不属于项目: " + project.getCode());
+        ReentrantLock lock = envLocks.computeIfAbsent(envId, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            assertEnvIdle(envId);
+            List<Deployment> created = new ArrayList<>();
+            for (BatchItem item : items) {
+                Project project = projectService.require(item.getProjectId());
+                Artifact artifact = artifactRepository.findById(item.getArtifactId())
+                        .orElseThrow(() -> ApiException.notFound("制品"));
+                if (!artifact.getProject().getId().equals(item.getProjectId())) {
+                    throw new ApiException("制品不属于项目: " + project.getCode());
+                }
+                created.add(createRecord(project, env, artifact, null, null));
             }
-            created.add(createRecord(project, env, artifact, null, null));
+            List<String> ids = created.stream().map(Deployment::getId).toList();
+            deployExecutor.submit(() -> runBatch(ids));
+            return created;
+        } finally {
+            lock.unlock();
         }
-        List<String> ids = created.stream().map(Deployment::getId).toList();
-        deployExecutor.submit(() -> runBatch(ids));
-        return created;
     }
 
     private void runBatch(List<String> ids) {
@@ -170,7 +193,6 @@ public class DeployService {
         Deployment target = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> ApiException.notFound("部署记录"));
         if (target.getStatus() != TaskStatus.SUCCESS) throw new ApiException("仅成功的部署可回滚");
-        assertEnvIdle(target.getEnvironment().getId());
         Deployment previous = findPreviousSuccess(target);
         if (previous == null) throw new ApiException("没有更早的成功部署可回滚");
         Integer revision = null;
@@ -178,7 +200,8 @@ public class DeployService {
                 && previous.getResult().get("revision") instanceof Number n) {
             revision = n.intValue();
         }
-        return createAndSubmit(target.getProject(), target.getEnvironment(), previous.getArtifact(), target.getId(), revision);
+        return lockedCreateAndSubmit(target.getProject(), target.getEnvironment(), previous.getArtifact(),
+                target.getId(), revision);
     }
 
     private Deployment createAndSubmit(Project project, Environment env, Artifact artifact,
@@ -199,6 +222,8 @@ public class DeployService {
         dep.setStatus(TaskStatus.PENDING); // 执行时置为 RUNNING；批量场景前序未完成时显示"排队中"
         dep.setRollbackOf(rollbackOf);
         dep.setOperator(currentOperator());
+        dep = deploymentRepository.save(dep);
+        // logPath 依赖 @UuidGenerator 生成的 id，必须在 save 之后回填，否则落库 "deploy-null.log" 导致下载 404
         dep.setLogPath(props.logPath().resolve("deploy-" + dep.getId() + ".log").toString());
         return deploymentRepository.save(dep);
     }
