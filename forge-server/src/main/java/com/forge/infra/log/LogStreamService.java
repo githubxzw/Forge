@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
@@ -83,20 +84,31 @@ public class LogStreamService {
         topics.remove(topicName);
     }
 
-    /** 订阅：先重放文件已有内容，再接入实时流。若已结束，重放后立即发送哨兵。返回取消订阅函数 */
-    public Runnable subscribe(String topicName, Path file, Consumer<String> onLine) {
-        Topic topic = topics.get(topicName);
-        if (topic == null || topic.finished) {
-            replayFile(file, onLine);
-            onLine.accept(END_LINE);
-            return () -> {};
-        }
+    /**
+     * 订阅：先重放文件已有内容，再接入实时流；任务终结时收到哨兵。返回取消订阅函数。
+     * terminated 由调用方提供（查任务表）：排队中的任务 topic 尚不存在，先登记占位等它开始，
+     * 不能因为「topic 不存在」就误判已结束。终结后新订阅则重放 + 立即发送哨兵。
+     */
+    public Runnable subscribe(String topicName, Path file, Consumer<String> onLine, BooleanSupplier terminated) {
+        Topic topic = topics.computeIfAbsent(topicName, k -> {
+            Topic t = new Topic();
+            t.file = file; // 占位：writer 等 sink() 创建，订阅者先挂上等实时流
+            return t;
+        });
         synchronized (topic) {
-            replayFile(topic.file, onLine);
-            Consumer<String> listener = onLine;
-            topic.listeners.add(listener);
-            return () -> topic.listeners.remove(listener);
+            replayFile(topic.file != null ? topic.file : file, onLine);
+            topic.listeners.add(onLine);
+            // 双检：登记前后任务可能恰好终结（finish 已把 topic 移出 map，广播错过我们）
+            if (terminated.getAsBoolean()) {
+                topic.listeners.remove(onLine);
+                onLine.accept(END_LINE);
+            }
         }
+        // 占位未被 sink() 接管且无人监听时移除，避免泄漏
+        if (topic.writer == null && topic.listeners.isEmpty()) {
+            topics.remove(topicName, topic);
+        }
+        return () -> topic.listeners.remove(onLine);
     }
 
     private void replayFile(Path file, Consumer<String> onLine) {
