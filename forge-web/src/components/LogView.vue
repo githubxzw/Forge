@@ -30,6 +30,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { Download, Bottom } from '@element-plus/icons-vue'
+import { fetchTicket } from '../api/api'
 
 const props = defineProps<{ kind: 'build' | 'deploy'; id: string; logUrl?: string }>()
 const lines = ref<string[]>([])
@@ -56,6 +57,7 @@ const isMatch = (i: number) => {
 
 let ws: WebSocket | null = null
 let closedByEnd = false
+let disposed = false
 
 const running = computed(() => connected.value && !ended.value)
 
@@ -94,27 +96,41 @@ function append(line: string) {
   if (autoScroll.value) scrollBottom()
 }
 
-function connect() {
+async function connect() {
+  if (disposed) return
+  // 每次连接先换取一次性 ticket，长效 JWT 不再进 URL（避免落入 access log）
+  let ticket: string
+  try {
+    ticket = await fetchTicket()
+  } catch {
+    if (!disposed) setTimeout(connect, 2000)
+    return
+  }
+  if (disposed) return
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  const token = localStorage.getItem('forge_token') || ''
-  ws = new WebSocket(`${proto}://${location.host}/ws/logs/${props.kind}/${props.id}?token=${token}`)
+  ws = new WebSocket(`${proto}://${location.host}/ws/logs/${props.kind}/${props.id}?ticket=${encodeURIComponent(ticket)}`)
   ws.onopen = () => (connected.value = true)
   ws.onmessage = e => append(String(e.data))
   ws.onclose = () => {
     connected.value = false
-    if (!closedByEnd && !ended.value) {
-      setTimeout(() => { if (!ended.value) connect() }, 2000)
+    if (!closedByEnd && !ended.value && !disposed) {
+      setTimeout(() => { if (!ended.value && !disposed) connect() }, 2000)
     }
   }
   ws.onerror = () => ws?.close()
 }
 
-function download() {
-  if (props.logUrl) window.open(props.logUrl, '_blank')
+async function download() {
+  if (!props.logUrl) return
+  const ticket = await fetchTicket()
+  window.open(`${props.logUrl}?ticket=${encodeURIComponent(ticket)}`, '_blank')
 }
 
 onMounted(connect)
-onUnmounted(() => { ws?.close() })
+onUnmounted(() => {
+  disposed = true
+  ws?.close()
+})
 </script>
 
 <style scoped>

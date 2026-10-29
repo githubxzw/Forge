@@ -5,6 +5,8 @@ export const login = (username: string, password: string) =>
   unwrap<{ token: string; username: string }>(http.post('/auth/login', { username, password }))
 export const changePassword = (oldPassword: string, newPassword: string) =>
   unwrap(http.post('/auth/password', { oldPassword, newPassword }))
+/** 一次性短效 ticket：WS 握手与日志下载等无法带 Authorization 头的通道使用 */
+export const fetchTicket = () => unwrap<string>(http.get('/auth/ticket'))
 
 // ---------- 项目 ----------
 export const listProjects = () => unwrap<any[]>(http.get('/projects'))
