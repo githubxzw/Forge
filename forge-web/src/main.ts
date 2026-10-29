@@ -7,9 +7,10 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as Icons from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
+import { initTheme } from './theme'
 import './styles.css'
 
-document.documentElement.classList.add('dark')
+initTheme()
 
 const app = createApp(App)
 app.use(createPinia())

@@ -42,8 +42,20 @@
 
     <el-container>
       <el-header class="header">
-        <div class="h-title"><span class="h-name">{{ route.meta.title || 'Forge' }}</span></div>
-        <el-tag size="small" effect="plain" class="ver">v1.1</el-tag>
+        <div class="h-crumb">
+          <span class="h-brand">Forge</span>
+          <span class="h-sep">/</span>
+          <span class="h-name">{{ route.meta.title || '控制台' }}</span>
+        </div>
+        <div class="h-actions">
+          <el-tooltip :content="mode === 'dark' ? '切换到日间模式' : '切换到夜间模式'" placement="bottom">
+            <button class="theme-toggle" :aria-label="mode === 'dark' ? '切换到日间模式' : '切换到夜间模式'" @click="toggle">
+              <el-icon v-if="mode === 'dark'"><Sunny /></el-icon>
+              <el-icon v-else><Moon /></el-icon>
+            </button>
+          </el-tooltip>
+          <el-tag size="small" effect="plain" class="ver">v1.1</el-tag>
+        </div>
       </el-header>
       <el-main style="padding: 0"><router-view /></el-main>
     </el-container>
@@ -54,10 +66,12 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useTheme } from '../theme'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const { mode, toggle } = useTheme()
 const activeMenu = computed(() => {
   if (route.path.startsWith('/projects')) return '/projects'
   return route.path
@@ -67,10 +81,11 @@ const doLogout = () => { auth.logout(); router.push('/login') }
 
 <style scoped>
 .aside {
-  background: linear-gradient(180deg, #0b1022 0%, #070a16 100%);
-  border-right: 1px solid rgba(124, 134, 255, .12);
+  background: var(--forge-aside-grad);
+  border-right: 1px solid var(--forge-aside-border);
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh;
+  transition: background .25s ease, border-color .25s ease;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 20px 18px 14px; }
 .brand-mark {
@@ -79,47 +94,52 @@ const doLogout = () => { auth.logout(); router.push('/login') }
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   box-shadow: 0 0 20px -4px rgba(99, 102, 241, .9);
 }
-.brand-name { color: #eef1ff; font-size: 18px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
-.brand-sub { color: #4d5675; font-size: 9.5px; letter-spacing: .22em; margin-top: 2px; }
+.brand-name { color: var(--el-text-color-primary); font-size: 18px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
+.brand-sub { color: var(--forge-text-faint); font-size: 9.5px; letter-spacing: .22em; margin-top: 2px; }
 
 .menu { border-right: none; background: transparent; flex: 1; }
 .menu :deep(.el-menu-item-group__title) {
-  color: #4d5675; font-size: 10.5px; letter-spacing: .14em;
+  color: var(--forge-menu-group); font-size: 11px; letter-spacing: .12em;
   padding: 16px 22px 6px; text-transform: uppercase;
 }
 .menu :deep(.el-menu-item) {
-  color: #8b95b5; margin: 2px 10px; border-radius: 8px; height: 40px;
+  color: var(--forge-menu-text); margin: 3px 10px; border-radius: 8px; height: 42px;
   transition: background .15s ease, color .15s ease;
 }
-.menu :deep(.el-menu-item:hover) { background: rgba(124, 134, 255, .08); color: #e6ebf7; }
+.menu :deep(.el-menu-item:hover) { background: var(--forge-menu-hover-bg); color: var(--forge-menu-text-hover); }
 .menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(90deg, rgba(99, 102, 241, .32), rgba(99, 102, 241, .08));
-  color: #c5c9ff; position: relative;
-  box-shadow: inset 0 0 0 1px rgba(124, 134, 255, .28);
+  background: var(--forge-menu-active-grad);
+  color: var(--forge-menu-active-text); position: relative;
+  box-shadow: inset 0 0 0 1px var(--forge-menu-active-border);
 }
 .menu :deep(.el-menu-item.is-active)::before {
   content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px;
-  border-radius: 3px; background: #8f9bff; box-shadow: 0 0 8px #6366f1;
+  border-radius: 3px; background: var(--forge-menu-bar); box-shadow: 0 0 8px var(--forge-menu-bar-glow);
 }
 
 .aside-foot {
   display: flex; align-items: center; gap: 10px;
   margin: 10px; padding: 10px 12px; border-radius: 10px;
-  background: rgba(124, 134, 255, .06); border: 1px solid rgba(124, 134, 255, .12);
+  background: var(--forge-foot-bg); border: 1px solid var(--forge-foot-border);
 }
 .avatar { background: linear-gradient(135deg, #6366f1, #a855f7); font-weight: 700; flex: none; }
 .uinfo { flex: 1; min-width: 0; }
-.uname { color: #e6ebf7; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-.urole { color: #4d5675; font-size: 11px; }
-.logout { color: #7d89a6; }
+.uname { color: var(--el-text-color-primary); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.urole { color: var(--forge-text-faint); font-size: 11px; }
+.logout { color: var(--forge-text-muted); }
 .logout:hover { color: #f87171; background: rgba(248, 113, 113, .12); }
 
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  background: rgba(7, 10, 22, .72); backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(124, 134, 255, .12);
+  background: var(--forge-header-bg); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--forge-aside-border);
   position: sticky; top: 0; z-index: 5; height: 56px;
+  transition: background .25s ease, border-color .25s ease;
 }
-.h-name { font-size: 15.5px; font-weight: 700; color: #e6ebf7; }
-.ver { color: #7c86a2; }
+.h-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.h-brand { font-size: 13px; font-weight: 700; color: var(--forge-text-muted); letter-spacing: .02em; }
+.h-sep { color: var(--forge-text-faint); font-size: 12px; }
+.h-name { font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); }
+.h-actions { display: flex; align-items: center; gap: 10px; }
+.ver { color: var(--forge-text-muted); }
 </style>

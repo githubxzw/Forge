@@ -112,9 +112,12 @@ const typeLabel = (t: string) => ({ FRONTEND: '前端', BACKEND: '后端', FULL:
 
 async function load() {
   loading.value = true
-  list.value = await listProjects()
-  creds.value = await listCredentials()
-  loading.value = false
+  try {
+    list.value = await listProjects()
+    creds.value = await listCredentials()
+  } finally {
+    loading.value = false
+  }
 }
 
 function openEdit(row: any) {
@@ -141,7 +144,8 @@ function composeForm() {
   if (ports.value) bc.ports = ports.value.split(',').map((s: string) => s.trim()).filter(Boolean)
   if (chartPath.value) bc.chartPath = chartPath.value
   const body: any = { ...form.value, buildConfig: bc }
-  if (healthUrl.value) body.healthCheck = { url: healthUrl.value }
+  // 清空健康检查 URL 时传空对象（后端对 null 字段不更新），HealthChecker 对空 URL 自动跳过
+  body.healthCheck = { url: healthUrl.value.trim() }
   return body
 }
 
@@ -156,8 +160,10 @@ async function save() {
 }
 
 async function remove(row: any) {
-  await ElMessageBox.confirm(
+  const ok = await ElMessageBox.confirm(
     `确认删除项目「${row.name}」？其构建/部署历史与制品文件将一并删除，不可恢复。`, '删除确认', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
   await deleteProject(row.id)
   ElMessage.success('已删除')
   load()

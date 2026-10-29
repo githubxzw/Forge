@@ -101,13 +101,32 @@ import StatusTag from '../components/StatusTag.vue'
 
 const webhookUrl = computed(() => `${location.origin}/api/webhook/${p.value.code || ''}`)
 
-function copyText(t: string) {
-  navigator.clipboard?.writeText(t)
-  ElMessage.success('已复制')
+async function copyText(t: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t)
+    } else {
+      // 非安全上下文（http://内网IP）没有 Clipboard API，降级 execCommand
+      const ta = document.createElement('textarea')
+      ta.value = t
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (!ok) throw new Error('copy failed')
+    }
+    ElMessage.success('已复制')
+  } catch (e) {
+    ElMessage.error('复制失败，请手动选择复制')
+  }
 }
 
 async function regenSecret() {
-  await ElMessageBox.confirm('重新生成后旧 Webhook 立即失效，确认？', '提示', { type: 'warning' })
+  const ok = await ElMessageBox.confirm('重新生成后旧 Webhook 立即失效，确认？', '提示', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
   const s = await regenerateWebhookSecret(id)
   p.value.webhookSecret = s
   ElMessage.success('已重新生成')
@@ -140,13 +159,16 @@ const duration = (row: any) => {
 
 async function load() {
   loading.value = true
-  p.value = await getProject(id)
-  branch.value = p.value.defaultBranch || 'main'
-  targets.value = p.value.type === 'FRONTEND' ? ['FRONTEND_TAR'] : p.value.type === 'BACKEND' ? ['BACKEND_JAR'] : ['FRONTEND_TAR', 'BACKEND_JAR']
-  builds.value = (await listBuilds(id, 0, 20)).content || []
-  artifacts.value = (await listArtifacts(id, null, 0, 50)).content || []
-  deployments.value = (await listDeployments(id, null, 0, 20)).content || []
-  loading.value = false
+  try {
+    p.value = await getProject(id)
+    branch.value = p.value.defaultBranch || 'main'
+    targets.value = p.value.type === 'FRONTEND' ? ['FRONTEND_TAR'] : p.value.type === 'BACKEND' ? ['BACKEND_JAR'] : ['FRONTEND_TAR', 'BACKEND_JAR']
+    builds.value = (await listBuilds(id, 0, 20)).content || []
+    artifacts.value = (await listArtifacts(id, null, 0, 50)).content || []
+    deployments.value = (await listDeployments(id, null, 0, 20)).content || []
+  } finally {
+    loading.value = false
+  }
 }
 
 async function doBuild() {

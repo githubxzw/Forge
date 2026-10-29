@@ -38,7 +38,7 @@
               <div class="week-num"><span class="num">{{ s.builds7?.ok ?? 0 }}</span><span class="muted"> / {{ s.builds7?.total ?? 0 }} 成功</span></div>
             </div>
             <el-progress type="circle" :width="58" :stroke-width="8"
-                         :percentage="s.builds7?.total ? Math.round((s.builds7.ok / s.builds7.total) * 100) : 0" />
+                         :percentage="pct(s.builds7)" :format="fmtPct(s.builds7)" />
           </div>
         </el-card>
       </el-col>
@@ -50,7 +50,7 @@
               <div class="week-num"><span class="num">{{ s.deploys7?.ok ?? 0 }}</span><span class="muted"> / {{ s.deploys7?.total ?? 0 }} 成功</span></div>
             </div>
             <el-progress type="circle" :width="58" :stroke-width="8"
-                         :percentage="s.deploys7?.total ? Math.round((s.deploys7.ok / s.deploys7.total) * 100) : 0" />
+                         :percentage="pct(s.deploys7)" :format="fmtPct(s.deploys7)" />
           </div>
         </el-card>
       </el-col>
@@ -66,6 +66,7 @@
             </div>
           </template>
           <el-table :data="s.recentBuilds || []" size="small">
+            <template #empty><el-empty :image-size="70" description="暂无构建记录" /></template>
             <el-table-column label="项目" #="{ row }">{{ row.project?.name }}</el-table-column>
             <el-table-column prop="branch" label="分支" width="100" />
             <el-table-column label="版本" show-overflow-tooltip #="{ row }"><span class="mono">{{ row.version }}</span></el-table-column>
@@ -83,6 +84,7 @@
             </div>
           </template>
           <el-table :data="s.recentDeployments || []" size="small">
+            <template #empty><el-empty :image-size="70" description="暂无部署记录" /></template>
             <el-table-column label="项目" #="{ row }">{{ row.project?.name }}</el-table-column>
             <el-table-column label="环境" width="110" #="{ row }">{{ row.environment?.name }}</el-table-column>
             <el-table-column label="制品版本" show-overflow-tooltip #="{ row }"><span class="mono">{{ row.artifact?.version }}</span></el-table-column>
@@ -112,12 +114,16 @@ const cards = [
 const s = ref<any>({})
 onMounted(async () => { s.value = await stats() })
 const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
+
+/** 无数据时圆环显示中性符号，避免误导性的 0% */
+const pct = (w: any) => (w?.total ? Math.min(100, Math.round((w.ok / w.total) * 100)) : 0)
+const fmtPct = (w: any) => () => (w?.total ? pct(w) + '%' : '–')
 </script>
 
 <style scoped>
 .list-head { display: flex; align-items: center; justify-content: space-between; }
 .week-row { display: flex; align-items: center; justify-content: space-between; }
-.week-title { color: #7c86a2; font-size: 13px; margin-bottom: 8px; }
+.week-title { color: var(--forge-text-muted); font-size: 13px; margin-bottom: 8px; }
 .week-num .num { font-size: 30px; font-weight: 800; }
 .week-num .muted { margin-left: 6px; }
 </style>

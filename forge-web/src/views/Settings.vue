@@ -5,6 +5,11 @@
         <h2>系统设置</h2>
         <p class="desc">镜像仓库、构建镜像源与工具链状态</p>
       </div>
+      <div class="actions">
+        <el-button type="primary" :loading="saving" :disabled="!dirty" @click="save">
+          {{ dirty ? '保存修改' : '无待保存修改' }}
+        </el-button>
+      </div>
     </div>
     <el-row :gutter="16">
       <el-col :span="14">
@@ -43,9 +48,6 @@
               <el-button :loading="testing" :disabled="s.notifyType === 'none' || !s.notifyWebhook" @click="sendTest">
                 发送测试通知
               </el-button>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="save">保存设置</el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -93,6 +95,9 @@ const info = ref<any>({})
 const oldPwd = ref('')
 const newPwd = ref('')
 const testing = ref(false)
+const saving = ref(false)
+// 与最近一次加载/保存的快照比对，驱动顶部保存按钮状态
+const savedSnapshot = ref('')
 
 async function sendTest() {
   testing.value = true
@@ -108,15 +113,23 @@ const toolRows = computed(() => {
   return Object.entries(tools).map(([name, t]: [string, any]) => ({ name, available: t?.available, version: t?.version || '' }))
 })
 
+const dirty = computed(() => JSON.stringify(s.value) !== savedSnapshot.value)
+
 async function load() {
   s.value = await getSettings()
+  savedSnapshot.value = JSON.stringify(s.value)
   info.value = await systemInfo()
 }
 
 async function save() {
-  await updateSettings(s.value)
-  ElMessage.success('已保存')
-  load()
+  saving.value = true
+  try {
+    await updateSettings(s.value)
+    savedSnapshot.value = JSON.stringify(s.value)
+    ElMessage.success('已保存')
+    load()
+  } catch (e) { /* 错误已弹 */ }
+  saving.value = false
 }
 
 async function changePwd() {

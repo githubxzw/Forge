@@ -3,6 +3,12 @@
     <div class="glow g1"></div>
     <div class="glow g2"></div>
     <div class="grid"></div>
+    <el-tooltip :content="mode === 'dark' ? '切换到日间模式' : '切换到夜间模式'" placement="bottom">
+      <button class="theme-toggle login-theme" :aria-label="mode === 'dark' ? '切换到日间模式' : '切换到夜间模式'" @click="toggle">
+        <el-icon v-if="mode === 'dark'"><Sunny /></el-icon>
+        <el-icon v-else><Moon /></el-icon>
+      </button>
+    </el-tooltip>
     <el-card class="login-card" shadow="never">
       <div class="logo-row">
         <div class="mark">🔨</div>
@@ -23,7 +29,7 @@
         <el-button type="primary" size="large" style="width: 100%; height: 42px; font-weight: 600"
                    :loading="loading" @click="doLogin">登 录</el-button>
       </el-form>
-      <div class="tip">默认账号 admin / admin123 · 首次登录后请修改密码</div>
+      <div class="tip">默认账号 admin / admin123<br/>首次登录后请及时修改密码</div>
     </el-card>
   </div>
 </template>
@@ -33,9 +39,11 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { login } from '../api/api'
 import { useAuthStore } from '../stores/auth'
+import { useTheme } from '../theme'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { mode, toggle } = useTheme()
 const username = ref('admin')
 const password = ref('')
 const loading = ref(false)
@@ -51,3 +59,7 @@ async function doLogin() {
   loading.value = false
 }
 </script>
+
+<style scoped>
+.login-theme { position: absolute; top: 22px; right: 26px; z-index: 5; }
+</style>

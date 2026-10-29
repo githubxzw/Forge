@@ -12,10 +12,10 @@
       </div>
     </div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 200px" @change="load">
+      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 200px" @change="() => { page = 0; load() }">
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
-      <el-select v-model="type" placeholder="全部类型" clearable style="width: 170px" @change="load">
+      <el-select v-model="type" placeholder="全部类型" clearable style="width: 170px" @change="() => { page = 0; load() }">
         <el-option label="前端包 TAR" value="TAR" />
         <el-option label="后端包 JAR" value="JAR" />
         <el-option label="Docker 镜像" value="IMAGE" />
@@ -43,7 +43,7 @@
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty :image-size="60" description="还没有制品，去项目详情发起一次构建吧" />
+        <el-empty :image-size="90" description="还没有制品，去项目详情发起一次构建吧" />
       </template>
     </el-table>
     <div style="margin-top: 12px; text-align: right">
@@ -81,10 +81,13 @@ const fmtSize = (n?: number | null) => {
 
 async function load() {
   loading.value = true
-  const p = await listArtifacts(projectId.value, type.value, page.value, 50)
-  rows.value = p.content || []
-  total.value = p.totalElements || 0
-  loading.value = false
+  try {
+    const p = await listArtifacts(projectId.value, type.value, page.value, 50)
+    rows.value = p.content || []
+    total.value = p.totalElements || 0
+  } finally {
+    loading.value = false
+  }
 }
 
 function deploy(row: any) {
@@ -92,7 +95,9 @@ function deploy(row: any) {
 }
 
 async function push(row: any) {
-  await ElMessageBox.confirm(`推送镜像 ${row.ref} 到 registry？`, '推送确认')
+  const ok = await ElMessageBox.confirm(`推送镜像 ${row.ref} 到 registry？`, '推送确认')
+    .then(() => true).catch(() => false)
+  if (!ok) return
   await pushArtifact(row.id)
   ElMessage.success('推送完成')
 }
@@ -100,25 +105,34 @@ async function push(row: any) {
 function download(row: any) {
   const token = localStorage.getItem('forge_token') || ''
   fetch(artifactDownloadUrl(row.id), { headers: { Authorization: `Bearer ${token}` } })
-    .then(r => r.blob()).then(blob => {
+    .then(async r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.blob()
+    })
+    .then(blob => {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = row.ref.split('/').pop() || 'artifact'
+      a.download = row.ref?.split('/').pop() || 'artifact'
       a.click()
       URL.revokeObjectURL(url)
     })
+    .catch(() => ElMessage.error('制品下载失败（文件可能已被清理）'))
 }
 
 async function remove(row: any) {
-  await ElMessageBox.confirm(`确认删除制品 ${row.version}？`, '删除确认', { type: 'warning' })
+  const ok = await ElMessageBox.confirm(`确认删除制品 ${row.version}？`, '删除确认', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
   await deleteArtifact(row.id)
   load()
 }
 
 async function batchRemove() {
   const ids = selection.value.map(r => r.id)
-  await ElMessageBox.confirm(`确认删除所选 ${ids.length} 个制品？被部署引用的将自动跳过。`, '批量删除', { type: 'warning' })
+  const ok = await ElMessageBox.confirm(`确认删除所选 ${ids.length} 个制品？被部署引用的将自动跳过。`, '批量删除', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
   const r = await batchDeleteArtifacts(ids)
   ElMessage.success(`已删除 ${r.deleted} 个${r.skipped ? `，${r.skipped} 个因被部署引用跳过` : ''}`)
   load()

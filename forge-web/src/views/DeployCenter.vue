@@ -13,7 +13,7 @@
       <template #header>🚀 一键部署</template>
       <el-form inline>
         <el-form-item label="项目">
-          <el-select v-model="dProject" style="width: 200px" placeholder="选择项目" @change="dArtifact = ''">
+          <el-select v-model="dProject" style="width: 200px" placeholder="选择项目" @change="onProjectChange">
             <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
@@ -36,7 +36,7 @@
     </el-card>
 
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 200px" @change="load">
+      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 200px" @change="() => { page = 0; load() }">
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
@@ -60,11 +60,11 @@
         <template #="{ row }">
           <el-button size="small" text type="primary" @click="openLog(row)">日志</el-button>
           <el-button v-if="row.status === 'SUCCESS'" size="small" text type="warning" @click="rollback(row)">回滚</el-button>
-          <el-button v-if="row.status === 'RUNNING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
+          <el-button v-if="row.status === 'RUNNING' || row.status === 'PENDING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty :image-size="60" description="还没有部署记录，用上方向导完成第一次部署" />
+        <el-empty :image-size="90" description="还没有部署记录，用上方向导完成第一次部署" />
       </template>
     </el-table>
     <div style="margin-top: 12px; text-align: right">
@@ -109,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -142,12 +142,28 @@ let timer: any = null
 
 const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm:ss') : '-')
 
+/** 每个项目的制品缓存：全局列表只取前 100 条，老项目的旧制品必须按项目拉取才能出现在下拉里 */
+const projectArtifacts = ref<Record<string, any[]>>({})
+async function loadProjectArtifacts(pid: string) {
+  if (!pid || projectArtifacts.value[pid]) return
+  try {
+    const p = await listArtifacts(pid, null, 0, 50)
+    projectArtifacts.value[pid] = p.content || []
+  } catch (e) { /* 下拉回退到全局列表 */ }
+}
+
 const deployableArtifacts = computed(() => {
   const env = environments.value.find(e => e.id === dEnv.value)
   const allowed: Record<string, string[]> = { SSH: ['TAR', 'JAR'], DOCKER: ['IMAGE'], K8S: ['CHART'] }
   const kinds = env ? allowed[env.kind] : ['TAR', 'JAR', 'IMAGE', 'CHART']
-  return artifacts.value.filter(a => a.project?.id === dProject.value && kinds.includes(a.type))
+  const pool = projectArtifacts.value[dProject.value] ?? artifacts.value
+  return pool.filter(a => a.project?.id === dProject.value && kinds.includes(a.type))
 })
+
+function onProjectChange() {
+  dArtifact.value = ''
+  loadProjectArtifacts(dProject.value)
+}
 
 const resultSummary = (row: any) => {
   const r = row.result || {}
@@ -159,12 +175,16 @@ const resultSummary = (row: any) => {
   return parts.join(' · ') || '-'
 }
 
-async function load() {
-  loading.value = true
-  const p = await listDeployments(projectId.value, null, page.value, 20)
-  rows.value = p.content || []
-  total.value = p.totalElements || 0
-  loading.value = false
+/** silent=true 供轮询使用：不触动表格 loading，避免部署期间每 5 秒闪烁遮罩 */
+async function load(silent = false) {
+  if (!silent) loading.value = true
+  try {
+    const p = await listDeployments(projectId.value, null, page.value, 20)
+    rows.value = p.content || []
+    total.value = p.totalElements || 0
+  } finally {
+    if (!silent) loading.value = false
+  }
 }
 
 async function doDeploy() {
@@ -185,9 +205,10 @@ async function rollback(row: any) {
     ElMessage.warning('该部署之前没有可回滚的成功版本')
     return
   }
-  await ElMessageBox.confirm(
+  const ok = await ElMessageBox.confirm(
     `将把「${row.project?.name}」在「${row.environment?.name}」回滚到版本 ${preview.version}（${fmt(preview.deployedAt)} 由 ${preview.operator || '-'} 部署），确认？`,
-    '回滚确认', { type: 'warning' })
+    '回滚确认', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!ok) return
   const dep = await rollbackDeploy(row.id)
   ElMessage.success('回滚任务已提交')
   await load()
@@ -209,11 +230,18 @@ function openLog(row: any) {
 function poll(id: string) {
   clearInterval(timer)
   timer = setInterval(async () => {
-    await load()
-    const row = rows.value.find(r => r.id === id)
-    if (!row || row.status !== 'RUNNING') clearInterval(timer)
+    try {
+      await load(true)
+      const row = rows.value.find(r => r.id === id)
+      if (!row || row.status !== 'RUNNING') clearInterval(timer)
+    } catch (e) {
+      clearInterval(timer) // 后端不可达时停止轮询，避免错误风暴
+    }
   }, 5000)
 }
+
+// 日志抽屉关闭后停止轮询
+watch(drawer, v => { if (!v) clearInterval(timer) })
 
 // ---------- 批量部署 ----------
 const batchOpen = ref(false)
@@ -229,14 +257,25 @@ function allowedFor(kind: string | undefined) {
 
 function openBatch() {
   batchEnv.value = dEnv.value || ''
-  batchRows.value = projects.value.map(p => {
-    const arts = artifacts.value
-      .filter(a => a.project?.id === p.id && allowedFor(environments.value.find(e => e.id === batchEnv.value)?.kind).includes(a.type))
-    return { project: p, artifacts: arts, artifactId: arts[0]?.id || '' }
-  })
   batchSelection.value = []
   batchOpen.value = true
+  refreshBatchRows()
+  // 并发补齐各项目的制品列表（全局快照只有前 100 条，老项目旧制品会缺失）
+  Promise.all(projects.value.map(p => loadProjectArtifacts(p.id))).then(refreshBatchRows)
 }
+
+/** 按当前目标环境重算各项目的可用制品与默认选中 */
+function refreshBatchRows() {
+  const kind = environments.value.find(e => e.id === batchEnv.value)?.kind
+  batchRows.value = projects.value.map(p => {
+    const pool = projectArtifacts.value[p.id] ?? artifacts.value
+    const arts = pool.filter(a => a.project?.id === p.id && allowedFor(kind).includes(a.type))
+    return { project: p, artifacts: arts, artifactId: arts[0]?.id || '' }
+  })
+}
+
+// 对话框内切换目标环境后重算制品候选，否则 SSH 制品会被提交到 K8S 环境
+watch(batchEnv, () => { if (batchOpen.value) refreshBatchRows() })
 
 async function doBatch() {
   if (!batchEnv.value) { ElMessage.warning('请选择目标环境'); return }
@@ -264,6 +303,7 @@ onMounted(async () => {
   if (route.query.artifactId) {
     dArtifact.value = route.query.artifactId as string
     dProject.value = (route.query.projectId as string) || ''
+    if (dProject.value) loadProjectArtifacts(dProject.value)
   }
 })
 onUnmounted(() => clearInterval(timer))

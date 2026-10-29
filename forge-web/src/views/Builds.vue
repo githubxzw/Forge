@@ -7,7 +7,7 @@
       </div>
     </div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 220px" @change="load">
+      <el-select v-model="projectId" placeholder="全部项目" clearable style="width: 220px" @change="() => { page = 0; load() }">
         <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
       </el-select>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
@@ -25,12 +25,12 @@
       <el-table-column label="操作" width="180">
         <template #="{ row }">
           <el-button size="small" text type="primary" @click="openLog(row)">日志</el-button>
-          <el-button v-if="row.status === 'RUNNING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
+          <el-button v-if="row.status === 'RUNNING' || row.status === 'PENDING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
           <el-button v-if="row.status === 'FAILED' || row.status === 'SUCCESS'" size="small" text @click="rebuild(row)">重新构建</el-button>
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty :image-size="60" description="还没有构建任务，去项目详情发起一次构建吧" />
+        <el-empty :image-size="90" description="还没有构建任务，去项目详情发起一次构建吧" />
       </template>
     </el-table>
     <div style="margin-top: 12px; text-align: right">
@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -79,11 +79,14 @@ const duration = (row: any) => {
 
 async function load() {
   loading.value = true
-  const p = await listBuilds(projectId.value, page.value, 20)
-  rows.value = p.content || []
-  total.value = p.totalElements || 0
-  loading.value = false
-  scheduleAuto()
+  try {
+    const p = await listBuilds(projectId.value, page.value, 20)
+    rows.value = p.content || []
+    total.value = p.totalElements || 0
+    scheduleAuto()
+  } finally {
+    loading.value = false
+  }
 }
 
 /** 有进行中/排队的任务时自动刷新列表 */
@@ -92,9 +95,13 @@ function scheduleAuto() {
   clearInterval(autoTimer)
   if (rows.value.some(r => r.status === 'RUNNING' || r.status === 'PENDING')) {
     autoTimer = setInterval(async () => {
-      const p = await listBuilds(projectId.value, page.value, 20)
-      rows.value = p.content || []
-      scheduleAuto()
+      try {
+        const p = await listBuilds(projectId.value, page.value, 20)
+        rows.value = p.content || []
+        scheduleAuto()
+      } catch (e) {
+        clearInterval(autoTimer) // 后端不可达时停止轮询，避免错误风暴
+      }
     }, 5000)
   }
 }
@@ -115,6 +122,9 @@ function pollStatus() {
     try { currentRow.value = await getBuild(currentId.value) } catch (e) { clearInterval(timer) }
   }, 3000)
 }
+
+// 日志抽屉关闭后停止轮询
+watch(drawer, v => { if (!v) clearInterval(timer) })
 
 async function cancel(row: any) {
   await cancelBuild(row.id)
