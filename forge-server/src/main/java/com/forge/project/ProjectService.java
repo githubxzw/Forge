@@ -61,7 +61,16 @@ public class ProjectService {
     /** 级联删除：部署记录 → 制品（含文件）→ 构建任务 → 项目 */
     @Transactional
     public void delete(String id) {
-        require(id);
+        Project p = require(id);
+        // 运行中的构建/部署会把已删除的行在 finally 里重新 save 回来（孤儿 RUNNING 记录），先拒绝
+        if (buildTaskRepository.existsByProjectIdAndStatusIn(id,
+                List.of(com.forge.domain.TaskStatus.PENDING, com.forge.domain.TaskStatus.RUNNING))) {
+            throw new ApiException("该项目有正在执行或排队的构建，无法删除");
+        }
+        if (deploymentRepository.existsByProjectIdAndStatusIn(id,
+                List.of(com.forge.domain.TaskStatus.PENDING, com.forge.domain.TaskStatus.RUNNING))) {
+            throw new ApiException("该项目有正在执行或排队的部署，无法删除");
+        }
         deploymentRepository.deleteAll(deploymentRepository.findByProjectId(id));
         List<Artifact> artifacts = artifactRepository.findByProjectId(id);
         for (Artifact a : artifacts) {
@@ -69,10 +78,11 @@ public class ProjectService {
                 try {
                     java.nio.file.Path file = props.artifactPath().resolve(a.getRef());
                     java.nio.file.Files.deleteIfExists(file);
-                    if (file.getParent() != null) TarUtils.deleteDir(file.getParent());
                 } catch (Exception ignore) {}
             }
         }
+        // 制品文件删完后清理该项目可能已空的制品目录
+        TarUtils.deleteDir(props.artifactPath().resolve(p.getCode()));
         artifactRepository.deleteAll(artifacts);
         buildTaskRepository.deleteAll(buildTaskRepository.findByProjectId(id));
         repository.deleteById(id);

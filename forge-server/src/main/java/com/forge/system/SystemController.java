@@ -75,13 +75,23 @@ public class SystemController {
                 default -> new String[]{tool, "--version"};
             };
             String version = "";
+            Process p = null;
             try {
-                Process p = new ProcessBuilder(versionCmd).start();
+                ProcessBuilder pb = new ProcessBuilder(versionCmd).redirectErrorStream(true);
+                p = pb.start();
                 boolean ok = p.waitFor(5, TimeUnit.SECONDS);
-                if (ok && p.exitValue() == 0) {
-                    version = new String(p.getInputStream().readAllBytes()).lines().findFirst().orElse("");
+                if (!ok) {
+                    p.destroyForcibly(); // 冷启动时 mvn/gradle 可能超 5s，不留孤儿 JVM
+                } else if (p.exitValue() == 0) {
+                    try (var in = p.getInputStream()) {
+                        version = new String(in.readAllBytes()).lines().findFirst().orElse("");
+                    }
                 }
-            } catch (Exception ignore) {}
+            } catch (Exception ignore) {
+                if (p != null) p.destroyForcibly();
+            } finally {
+                if (p != null && p.isAlive()) p.destroyForcibly();
+            }
             result.put("available", true);
             result.put("version", version);
         } catch (Exception e) {

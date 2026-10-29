@@ -52,6 +52,11 @@ public class SshService {
         try {
             Path tmp = Files.createTempFile("forge-kubeconfig-", ".yaml");
             Files.writeString(tmp, content);
+            try {
+                // 集群凭据，仅本进程用户可读
+                Files.setPosixFilePermissions(tmp,
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            } catch (UnsupportedOperationException ignore) {}
             if (sink != null) sink.line("[forge] kubeconfig -> " + tmp);
             return tmp.toString();
         } catch (Exception e) {

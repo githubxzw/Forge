@@ -41,10 +41,12 @@ public class SshExecutor implements AutoCloseable {
 
     public static SshExecutor connect(String host, int port, String username,
                                       String password, String privateKey, String passphrase) {
+        SshClient client = SshClient.setUpDefaultClient();
+        ClientSession session = null;
+        boolean ok = false;
         try {
-            SshClient client = SshClient.setUpDefaultClient();
             client.start();
-            ClientSession session = client.connect(username, host, port)
+            session = client.connect(username, host, port)
                     .verify(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS).getSession();
             boolean authed = false;
             if (privateKey != null && !privateKey.isBlank()) {
@@ -61,19 +63,27 @@ public class SshExecutor implements AutoCloseable {
                 session.addPasswordIdentity(password);
                 authed = true;
             }
-            if (!authed) {
-                session.close();
-                client.stop();
-                throw new ApiException(400, "SSH 凭据缺失：需要密码或私钥");
-            }
+            if (!authed) throw new ApiException(400, "SSH 凭据缺失：需要密码或私钥");
             session.auth().verify(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            ok = true;
             return new SshExecutor(client, session);
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
             log.debug("SSH 连接失败", e);
             throw new ApiException(500, "SSH 连接失败: " + rootMessage(e));
+        } finally {
+            // 认证/连接失败时必须释放已 start 的 client 与 session，否则线程池随失败次数泄漏
+            if (!ok) {
+                if (session != null) try { session.close(); } catch (Exception ignore) {}
+                try { client.stop(); } catch (Exception ignore) {}
+            }
         }
+    }
+
+    /** POSIX 单引号转义：' → '\''，防止单引号闭合注入 */
+    public static String shellQuote(String s) {
+        return "'" + s.replace("'", "'\\''") + "'";
     }
 
     /** 执行命令，输出逐行写入 sink；返回 exit code */
@@ -117,7 +127,7 @@ public class SshExecutor implements AutoCloseable {
     public void upload(Path local, String remote, LogSink sink) {
         try {
             String parent = remote.contains("/") ? remote.substring(0, remote.lastIndexOf('/')) : "/";
-            execOrThrow("mkdir -p '" + parent + "'", sink, 60);
+            execOrThrow("mkdir -p " + shellQuote(parent), sink, 60);
             try (SftpClient sftp = org.apache.sshd.sftp.client.SftpClientFactory.instance().createSftpClient(session)) {
                 try (var in = Files.newInputStream(local);
                      var out = sftp.write(remote, SftpClient.OpenMode.Write, SftpClient.OpenMode.Create, SftpClient.OpenMode.Truncate)) {

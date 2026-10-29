@@ -26,7 +26,11 @@ public class AuthController {
     /** 登录防爆破：同一用户名连续失败 5 次锁定 10 分钟（内存态，重启即清零） */
     private static final int MAX_ATTEMPTS = 5;
     private static final long LOCK_MS = 10 * 60 * 1000L;
+    private static final int MAX_TRACKED_USERS = 10_000;
     private static final java.util.Map<String, long[]> ATTEMPTS = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 用户不存在时也执行一次同代价的 bcrypt 比对，拉平响应时间，堵住用户名枚举侧信道 */
+    private static final String DUMMY_HASH =
+            "$2a$10$MF17SWsMGEw5nl1CkPhWIu5gvkAtrqiQ3NhgninxrLcGfS16daAZa"; // bcrypt("forge-dummy")
 
     @Data
     public static class LoginReq {
@@ -43,10 +47,10 @@ public class AuthController {
             long minutes = (attempt[1] - now) / 60000 + 1;
             throw new ApiException(429, "失败次数过多，账号已临时锁定，请 " + minutes + " 分钟后重试");
         }
-        AppUser user = userRepository.findByUsername(username)
-                .filter(u -> passwordEncoder.matches(req.getPassword(), u.getPassword()))
-                .orElse(null);
-        if (user == null) {
+        AppUser user = userRepository.findByUsername(username).orElse(null);
+        boolean matched = user != null && passwordEncoder.matches(req.getPassword(), user.getPassword());
+        if (!matched) {
+            if (user == null) passwordEncoder.matches(req.getPassword(), DUMMY_HASH); // 拉平耗时
             recordFailure(username, attempt);
             throw new ApiException(401, "用户名或密码错误");
         }
@@ -64,7 +68,10 @@ public class AuthController {
             attempt[1] = now + LOCK_MS;
             attempt[0] = 0;
         }
-        ATTEMPTS.put(username, attempt);
+        // 上限保护：恶意用大量随机用户名打登录接口时不至于无界增长
+        if (ATTEMPTS.size() < MAX_TRACKED_USERS || ATTEMPTS.containsKey(username)) {
+            ATTEMPTS.put(username, attempt);
+        }
     }
 
     @GetMapping("/me")
@@ -85,6 +92,7 @@ public class AuthController {
         AppUser user = userRepository.findByUsername(name).orElseThrow();
         String oldPwd = body.get("oldPassword");
         String newPwd = body.get("newPassword");
+        if (oldPwd == null || oldPwd.isBlank()) throw new ApiException("原密码不能为空");
         if (newPwd == null || newPwd.length() < 6) throw new ApiException("新密码长度至少 6 位");
         if (!passwordEncoder.matches(oldPwd, user.getPassword())) throw new ApiException("原密码错误");
         user.setPassword(passwordEncoder.encode(newPwd));

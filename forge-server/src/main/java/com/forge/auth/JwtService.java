@@ -32,6 +32,7 @@ public class JwtService {
                 } else {
                     bytes = new byte[48];
                     new SecureRandom().nextBytes(bytes);
+                    java.nio.file.Files.createDirectories(keyFile.getParent());
                     java.nio.file.Files.writeString(keyFile, Base64.getEncoder().encodeToString(bytes));
                     try {
                         java.nio.file.Files.setPosixFilePermissions(keyFile,

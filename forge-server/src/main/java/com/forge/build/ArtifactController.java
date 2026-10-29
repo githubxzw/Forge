@@ -34,10 +34,17 @@ public class ArtifactController {
                                           @RequestParam(defaultValue = "0") int page,
                                           @RequestParam(defaultValue = "20") int size) {
         Page<Artifact> result;
-        if (projectId != null && !projectId.isBlank() && type != null && !type.isBlank()) {
-            List<Artifact> list = artifactRepository.findByProjectIdAndTypeOrderByCreatedAtDesc(
-                    projectId, ArtifactType.valueOf(type));
-            result = new org.springframework.data.domain.PageImpl<>(list, PageRequest.of(page, size), list.size());
+        ArtifactType typeEnum = null;
+        if (type != null && !type.isBlank()) {
+            try {
+                typeEnum = ArtifactType.valueOf(type);
+            } catch (IllegalArgumentException e) {
+                throw new ApiException("未知制品类型: " + type);
+            }
+        }
+        if (projectId != null && !projectId.isBlank() && typeEnum != null) {
+            result = artifactRepository.findByProjectIdAndTypeOrderByCreatedAtDesc(
+                    projectId, typeEnum, PageRequest.of(page, size));
         } else if (projectId != null && !projectId.isBlank()) {
             result = artifactRepository.findByProjectIdOrderByCreatedAtDesc(projectId, PageRequest.of(page, size));
         } else {

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /** 构建编排：任务落库 → 线程池执行（检出代码 → 依序跑各 Builder → 制品入库） */
@@ -215,8 +216,10 @@ public class BuildService {
     public static String genVersion(String branch, String commit) {
         String b = branch.toLowerCase().replaceAll("[^a-z0-9._-]", "-").replaceAll("-+", "-");
         if (b.length() > 20) b = b.substring(0, 20);
-        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmm"));
+        // 秒级 + 4 位随机后缀：同一分钟内的连续构建也不会撞版本（撞版本会导致制品文件互相覆盖、checksum 错乱）
+        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
         String c = commit == null || commit.length() < 7 ? "local" : commit.substring(0, 7);
-        return b + "-" + ts + "-" + c;
+        String rand = String.format("%04x", ThreadLocalRandom.current().nextInt(0x10000));
+        return b + "-" + ts + "-" + c + "-" + rand;
     }
 }

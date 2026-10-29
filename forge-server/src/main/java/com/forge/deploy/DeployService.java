@@ -183,9 +183,11 @@ public class DeployService {
     }
 
     private Deployment findPreviousSuccess(Deployment target) {
+        // LessThanEqual + 排除自身：批量部署同秒落库的多条记录也能正确回退到前一条
         return deploymentRepository
-                .findFirstByProjectIdAndEnvironmentIdAndStatusAndCreatedAtBeforeOrderByCreatedAtDesc(
-                        target.getProject().getId(), target.getEnvironment().getId(), TaskStatus.SUCCESS, target.getCreatedAt());
+                .findFirstByProjectIdAndEnvironmentIdAndStatusAndIdNotAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
+                        target.getProject().getId(), target.getEnvironment().getId(), TaskStatus.SUCCESS,
+                        target.getId(), target.getCreatedAt());
     }
 
     /** 回滚：撤销某次部署，回到它之前同项目同环境的最近一次成功版本。 */

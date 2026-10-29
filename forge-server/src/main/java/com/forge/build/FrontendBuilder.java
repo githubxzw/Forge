@@ -62,9 +62,7 @@ public class FrontendBuilder implements Builder {
             if ("npm".equals(pm) && hasLock && install.contains("ci")) {
                 ctx.getLog().line("[forge] npm ci 失败（" + e.getMessage() + "），降级为 npm install 重试");
                 List<String> fallback = new ArrayList<>(List.of("npm", "install"));
-                if (install.contains("--registry=")) {
-                    fallback.add(install.get(install.indexOf("--registry=")));
-                }
+                install.stream().filter(s -> s.startsWith("--registry=")).findFirst().ifPresent(fallback::add);
                 ProcessRunner.run(fallback, src, ctx.getEnv(), ctx.getLog(), null, 1800);
             } else {
                 throw e;

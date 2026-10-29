@@ -74,8 +74,13 @@ public class ArtifactService {
             try {
                 Path file = props.artifactPath().resolve(artifact.getRef());
                 Files.deleteIfExists(file);
+                // 父目录是同项目同类型全部制品的共享目录，仅当已空时才删除
                 Path parent = file.getParent();
-                if (parent != null) TarUtils.deleteDir(parent);
+                if (parent != null) {
+                    try (var entries = Files.list(parent)) {
+                        if (entries.findAny().isEmpty()) Files.delete(parent);
+                    }
+                }
             } catch (IOException ignore) {}
         }
         artifactRepository.delete(artifact);

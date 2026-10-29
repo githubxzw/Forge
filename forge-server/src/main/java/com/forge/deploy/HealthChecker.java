@@ -60,7 +60,7 @@ public class HealthChecker {
         while (System.currentTimeMillis() < deadline) {
             try {
                 HttpResponse<Void> resp = client.send(
-                        HttpRequest.newBuilder(URI.create(url)).GET().build(),
+                        HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5)).GET().build(),
                         HttpResponse.BodyHandlers.discarding());
                 lastCode = resp.statusCode();
                 if (lastCode >= 200 && lastCode < 400) {

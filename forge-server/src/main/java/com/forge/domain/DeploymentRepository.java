@@ -12,9 +12,9 @@ public interface DeploymentRepository extends JpaRepository<Deployment, String> 
     Page<Deployment> findByProjectIdAndEnvironmentIdOrderByCreatedAtDesc(String projectId, String environmentId, Pageable pageable);
     List<Deployment> findTop10ByOrderByCreatedAtDesc();
 
-    /** 目标部署之前（不含）同项目同环境的最近一次成功部署 —— 回滚即部署它 */
-    Deployment findFirstByProjectIdAndEnvironmentIdAndStatusAndCreatedAtBeforeOrderByCreatedAtDesc(
-            String projectId, String environmentId, TaskStatus status, java.time.LocalDateTime before);
+    /** 目标部署之前（或同秒更早落库、不含自身）同项目同环境的最近一次成功部署 —— 回滚即部署它 */
+    Deployment findFirstByProjectIdAndEnvironmentIdAndStatusAndIdNotAndCreatedAtLessThanEqualOrderByCreatedAtDesc(
+            String projectId, String environmentId, TaskStatus status, String id, java.time.LocalDateTime atOrBefore);
 
     List<Deployment> findByStatusIn(List<TaskStatus> statuses);
     List<Deployment> findByProjectId(String projectId);
@@ -22,4 +22,5 @@ public interface DeploymentRepository extends JpaRepository<Deployment, String> 
     boolean existsByArtifactId(String artifactId);
     boolean existsByEnvironmentId(String environmentId);
     boolean existsByEnvironmentIdAndStatusIn(String environmentId, List<TaskStatus> statuses);
+    boolean existsByProjectIdAndStatusIn(String projectId, List<TaskStatus> statuses);
 }

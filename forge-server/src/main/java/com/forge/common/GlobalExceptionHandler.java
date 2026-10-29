@@ -40,7 +40,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResult<Void>> handleOther(Exception e) {
         log.error("unhandled error", e);
+        // 兜底异常不透传内部 message（可能含服务器路径/拓扑信息），详情只进服务端日志
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResult.error(500, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+                .body(ApiResult.error(500, "服务器内部错误，请查看服务端日志"));
     }
 }

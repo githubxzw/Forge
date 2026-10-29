@@ -10,6 +10,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -48,9 +49,12 @@ public class LogWebSocketHandler extends TextWebSocketHandler {
                 ? props.logPath().resolve("build-" + id + ".log")
                 : props.logPath().resolve("deploy-" + id + ".log");
 
+        // 慢速客户端在独立线程发送、缓冲上限 512KB：超限/超时自动断开，
+        // 避免 sendMessage 长时间阻塞日志线程（会卡住构建输出泵）
+        WebSocketSession safe = new ConcurrentWebSocketSessionDecorator(session, 10_000, 512 * 1024);
         Runnable unsub = logStreamService.subscribe(kind + ":" + id, file, line -> {
             try {
-                if (session.isOpen()) session.sendMessage(new TextMessage(line));
+                if (safe.isOpen()) safe.sendMessage(new TextMessage(line));
             } catch (Exception e) {
                 Runnable u = unsubs.remove(session.getId());
                 if (u != null) u.run();
