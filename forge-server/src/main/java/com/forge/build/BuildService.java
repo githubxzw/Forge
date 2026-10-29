@@ -103,6 +103,8 @@ public class BuildService {
         task.setTargets(parsed.stream().map(Enum::name).toList());
         task.setStatus(TaskStatus.PENDING);
         task.setTrigger(trigger);
+        task = buildTaskRepository.save(task);
+        // logPath 依赖 @UuidGenerator 生成的 id，必须在 save 之后回填，否则落库 "build-null.log" 导致下载 404
         task.setLogPath(props.logPath().resolve("build-" + task.getId() + ".log").toString());
         task = buildTaskRepository.save(task);
 
@@ -114,17 +116,23 @@ public class BuildService {
     }
 
     void execute(String taskId, String projectId, String branch, List<BuildTarget> targets) {
+        // 排队期间被取消的任务：不置 RUNNING、不 clone，直接退出（cancel 已落终态并 finish 日志流）
+        BuildTask pre = buildTaskRepository.findById(taskId).orElse(null);
+        if (pre == null) return;
+        if (cancelled.remove(taskId) || pre.getStatus() == TaskStatus.CANCELLED) return;
+
         LogSink sink = logStreamService.sink("build:" + taskId, props.logPath().resolve("build-" + taskId + ".log"));
         BuildTask task = null;
+        Path workDir = null;
         try {
-            task = buildTaskRepository.findById(taskId).orElseThrow();
+            task = pre;
             Project project = projectService.require(projectId);
             task.setStatus(TaskStatus.RUNNING);
             task.setStartedAt(LocalDateTime.now());
             task = buildTaskRepository.save(task);
 
             String code = project.getCode();
-            Path workDir = props.workPath().resolve(code).resolve(taskId);
+            workDir = props.workPath().resolve(code).resolve(taskId);
             Path src = workDir.resolve("src");
             Files.createDirectories(workDir);
 
@@ -160,7 +168,6 @@ public class BuildService {
             task.setStatus(TaskStatus.SUCCESS);
             sink.line("");
             sink.line("[forge] 构建成功，版本: " + task.getVersion());
-            TarUtils.deleteDir(workDir); // 成功后清理工作目录
         } catch (Exception e) {
             boolean wasCancelled = cancelled.remove(taskId);
             sink.line("");
@@ -171,6 +178,11 @@ public class BuildService {
                 task.setMessage(wasCancelled ? "已取消" : e.getMessage());
             }
         } finally {
+            // 成功/失败/取消一律清理工作目录（日志在 logDir，不受影响）
+            if (workDir != null && Files.exists(workDir)) {
+                sink.line("[forge] 清理工作目录: " + workDir);
+                TarUtils.deleteDir(workDir);
+            }
             if (task != null) {
                 task.setFinishedAt(LocalDateTime.now());
                 buildTaskRepository.save(task);
