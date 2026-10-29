@@ -6,12 +6,9 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.nio.file.Files;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/builds")
@@ -19,6 +16,7 @@ import java.util.Map;
 public class BuildController {
     private final BuildService buildService;
     private final com.forge.domain.BuildTaskRepository buildTaskRepository;
+    private final com.forge.auth.TicketService ticketService;
 
     @Data
     public static class StartReq {
@@ -52,13 +50,14 @@ public class BuildController {
         return ApiResult.ok(buildService.cancel(id));
     }
 
+    /** 日志下载：permitAll 路径，靠一次性 ticket 或 JWT 头鉴权（见 SecurityConfig），流式输出不驻堆 */
     @GetMapping("/{id}/log")
-    public ResponseEntity<String> log(@PathVariable String id) throws Exception {
+    public org.springframework.http.ResponseEntity<
+            org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody> log(
+            @PathVariable String id, @RequestParam(required = false) String ticket) throws Exception {
+        ticketService.requireAuthOrTicket(ticket);
         var task = buildTaskRepository.findById(id).orElseThrow(() -> com.forge.common.ApiException.notFound("构建任务"));
         var path = java.nio.file.Path.of(task.getLogPath() == null ? "" : task.getLogPath());
-        String content = Files.exists(path) ? Files.readString(path) : "(无日志)";
-        return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=build-" + id + ".log")
-                .body(content);
+        return com.forge.common.StreamedLog.of(path, "build-" + id + ".log");
     }
 }

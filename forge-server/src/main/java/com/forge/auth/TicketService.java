@@ -1,5 +1,7 @@
 package com.forge.auth;
 
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -36,5 +38,19 @@ public class TicketService {
         if (ticket == null || ticket.isBlank()) return false;
         Long expireAt = tickets.remove(ticket);
         return expireAt != null && expireAt >= System.currentTimeMillis();
+    }
+
+    /**
+     * 下载接口鉴权：请求已带有效 JWT 头（SecurityContext 已认证）直接放行；
+     * 否则必须携带有效一次性 ticket。二者皆无 → 401。
+     * （window.open 无法带 Authorization 头，ticket 即为此类通道准备）
+     */
+    public void requireAuthOrTicket(String ticket) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean headerAuthed = auth != null && auth.isAuthenticated()
+                && !(auth instanceof AnonymousAuthenticationToken);
+        if (!headerAuthed && !consume(ticket)) {
+            throw new com.forge.common.ApiException(401, "下载凭证无效或已过期");
+        }
     }
 }

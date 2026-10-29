@@ -10,7 +10,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -20,6 +19,7 @@ import java.util.Map;
 public class DeploymentController {
     private final DeployService deployService;
     private final DeploymentRepository deploymentRepository;
+    private final com.forge.auth.TicketService ticketService;
 
     @Data
     public static class StartReq {
@@ -84,14 +84,15 @@ public class DeploymentController {
                 .orElseThrow(() -> com.forge.common.ApiException.notFound("部署记录")));
     }
 
+    /** 日志下载：permitAll 路径，靠一次性 ticket 或 JWT 头鉴权（见 SecurityConfig），流式输出不驻堆 */
     @GetMapping("/{id}/log")
-    public org.springframework.http.ResponseEntity<String> log(@PathVariable String id) throws Exception {
+    public org.springframework.http.ResponseEntity<
+            org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody> log(
+            @PathVariable String id, @RequestParam(required = false) String ticket) throws Exception {
+        ticketService.requireAuthOrTicket(ticket);
         Deployment dep = deploymentRepository.findById(id)
                 .orElseThrow(() -> com.forge.common.ApiException.notFound("部署记录"));
         Path path = Path.of(dep.getLogPath() == null ? "" : dep.getLogPath());
-        String content = Files.exists(path) ? Files.readString(path) : "(无日志)";
-        return org.springframework.http.ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=deploy-" + id + ".log")
-                .body(content);
+        return com.forge.common.StreamedLog.of(path, "deploy-" + id + ".log");
     }
 }

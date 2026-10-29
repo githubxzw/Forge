@@ -21,6 +21,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final TicketService ticketService;
 
     /** 登录防爆破：同一用户名连续失败 5 次锁定 10 分钟（内存态，重启即清零） */
     private static final int MAX_ATTEMPTS = 5;
@@ -70,6 +71,12 @@ public class AuthController {
     public ApiResult<Map<String, String>> me() {
         String name = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         return ApiResult.ok(Map.of("username", name));
+    }
+
+    /** 签发一次性短效 ticket（需 JWT 头鉴权）：供 WS 握手与日志下载等无法带头的通道使用 */
+    @GetMapping("/ticket")
+    public ApiResult<Map<String, String>> ticket() {
+        return ApiResult.ok(Map.of("ticket", ticketService.issue()));
     }
 
     @PostMapping("/password")

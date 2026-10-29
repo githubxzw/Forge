@@ -49,6 +49,8 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/error", "/api/webhook/**").permitAll()
+                // 日志下载改由控制器内 ticket/JWT 双通道鉴权（window.open 无法带 Authorization 头）
+                .requestMatchers("/api/builds/*/log", "/api/deployments/*/log").permitAll()
                 .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/ws/**").permitAll()
                 // SPA 路由刷新兜底：非 API/WS 的 GET 请求放行（真实静态资源或经 /error 转发到 index.html）
                 .requestMatchers(req -> {
