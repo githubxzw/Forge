@@ -53,12 +53,12 @@ public class DockerBuilder implements Builder {
             args.forEach((k, v) -> cmd.add("--build-arg=" + k + "=" + v));
         }
         cmd.add(".");
-        ProcessRunner.run(cmd, src, ctx.getEnv(), ctx.getLog(), null, 3600);
+        ctx.run(cmd, src, 3600);
 
         // 3. 可选自动推送
         if ("true".equalsIgnoreCase(ctx.setting("dockerAutoPush")) && settings.registryConfigured()) {
             dockerLogin(ctx);
-            ProcessRunner.run(List.of("docker", "push", ref), null, ctx.getEnv(), ctx.getLog(), null, 1800);
+            ctx.run(List.of("docker", "push", ref), null, 1800);
         }
 
         ctx.getLog().line("[forge] 镜像构建完成: " + ref);

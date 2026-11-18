@@ -243,6 +243,8 @@ html.dark .s-tag--running { color: #fbbf24; }
 .s-tag--running .dot { animation: pulse 1.1s ease-in-out infinite; }
 .s-tag--info { background: rgba(100, 116, 139, .13); color: #64748b; }
 html.dark .s-tag--info { color: #94a3b8; }
+.s-tag--warn { background: rgba(56, 189, 248, .13); color: #0284c7; }
+html.dark .s-tag--warn { color: #38bdf8; }
 @keyframes pulse { 50% { opacity: .25; } }
 
 /* ---------- 统计卡 ---------- */

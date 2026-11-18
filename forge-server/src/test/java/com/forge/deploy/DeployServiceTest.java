@@ -29,12 +29,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +59,7 @@ class DeployServiceTest {
     SshService sshService;
     ForgeProperties props;
     ThreadPoolExecutor deployExecutor;
+    Deployer sshDeployer;
 
     DeployService service;
 
@@ -103,6 +106,7 @@ class DeployServiceTest {
 
         Deployer sshDeployer = mock(Deployer.class);
         when(sshDeployer.kind()).thenReturn(EnvKind.SSH);
+        this.sshDeployer = sshDeployer;
 
         service = new DeployService(repo, artifactRepository, projectService, environmentService,
                 artifactService, List.of(sshDeployer), healthChecker, logStreamService, taskRegistry,
@@ -185,5 +189,171 @@ class DeployServiceTest {
         verify(repo, atLeast(1)).save(cap.capture());
         assertTrue(cap.getAllValues().stream().noneMatch(d -> String.valueOf(d.getLogPath()).contains("null")),
                 "任何一次 save 都不允许携带 null 日志路径");
+    }
+
+    @Test
+    void cancelPendingDeploymentMarksCancelled() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1"); // submit 被 mock 吞掉，记录保持 PENDING
+        assertEquals(TaskStatus.PENDING, dep.getStatus());
+
+        assertTrue(service.cancel(dep.getId()));
+        assertEquals(TaskStatus.CANCELLED, table.get(dep.getId()).getStatus());
+        assertEquals("已取消（排队中）", table.get(dep.getId()).getMessage());
+    }
+
+    @Test
+    void executeSkipsDeploymentCancelledWhileQueued() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        table.get(dep.getId()).setStatus(TaskStatus.CANCELLED); // 模拟排队期间被取消
+
+        service.execute(dep.getId(), null);
+
+        // 旧代码：不重读库内状态，直接置 RUNNING 并执行部署
+        verify(sshDeployer, never()).deploy(any());
+        assertEquals(TaskStatus.CANCELLED, table.get(dep.getId()).getStatus());
+    }
+
+    @Test
+    void cancelReturnsFalseForFinishedDeployment() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        table.get(dep.getId()).setStatus(TaskStatus.SUCCESS);
+        assertFalse(service.cancel(dep.getId()));
+    }
+
+    @Test
+    void startMarksDeploymentFailedWhenQueueFull() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+        org.mockito.Mockito.doThrow(new java.util.concurrent.RejectedExecutionException())
+                .when(deployExecutor).submit(any(Runnable.class));
+
+        com.forge.common.ApiException ex = assertThrows(com.forge.common.ApiException.class,
+                () -> service.start("p1", "env-1", "art-1"));
+
+        // 旧代码：RejectedExecutionException 裸抛，记录卡 PENDING 且同环境锁被占
+        assertTrue(ex.getMessage().contains("队列已满"), ex.getMessage());
+        assertEquals(1, table.values().stream().filter(d -> d.getStatus() == TaskStatus.FAILED).count());
+        assertTrue(table.values().iterator().next().getMessage().contains("队列已满"));
+    }
+
+    @Test
+    void executeSucceedsWithDeployerResult() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+        when(artifactService.verifyChecksum(any())).thenReturn(true);
+        when(artifactService.resolveFile(any())).thenReturn(null);
+        when(sshDeployer.deploy(any())).thenReturn(Map.of("version", "v1"));
+        when(healthChecker.check(any(), any(), any())).thenReturn(Map.of("healthy", true));
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        service.execute(dep.getId(), null);
+
+        assertEquals(TaskStatus.SUCCESS, table.get(dep.getId()).getStatus());
+        assertEquals(true, table.get(dep.getId()).getResult().get("healthy"));
+    }
+
+    // ---------- 部署审批（P2-2） ----------
+
+    private Environment approvalEnv() {
+        Environment e = env();
+        e.setApprovalRequired(true);
+        return e;
+    }
+
+    @Test
+    void approvalEnvCreatesPendingApprovalWithoutExecuting() {
+        Project p = project("p1");
+        Environment e = approvalEnv();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+
+        assertEquals(TaskStatus.PENDING_APPROVAL, dep.getStatus());
+        verify(deployExecutor, never()).submit(any(Runnable.class)); // 审批前绝不执行
+    }
+
+    @Test
+    void approveSubmitsForExecutionAndRecordsApprover() {
+        Project p = project("p1");
+        Environment e = approvalEnv();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        Deployment approved = service.approve(dep.getId());
+
+        assertEquals(TaskStatus.PENDING, approved.getStatus());
+        verify(deployExecutor).submit(any(Runnable.class));
+        assertEquals("system", table.get(dep.getId()).getResult().get("approvedBy"));
+    }
+
+    @Test
+    void rejectMarksRejectedWithReason() {
+        Project p = project("p1");
+        Environment e = approvalEnv();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        Deployment rejected = service.reject(dep.getId(), "版本不对");
+
+        assertEquals(TaskStatus.REJECTED, rejected.getStatus());
+        assertTrue(table.get(dep.getId()).getMessage().contains("版本不对"));
+        verify(deployExecutor, never()).submit(any(Runnable.class));
+    }
+
+    @Test
+    void approveRejectsNonPendingApprovalState() {
+        Project p = project("p1");
+        Environment e = env();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        table.get(dep.getId()).setStatus(TaskStatus.SUCCESS);
+        assertThrows(com.forge.common.ApiException.class, () -> service.approve(dep.getId()));
+    }
+
+    @Test
+    void pendingApprovalBlocksNewDeploymentOnSameEnv() {
+        Project p = project("p1");
+        Environment e = approvalEnv();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        service.start("p1", "env-1", "art-1"); // PENDING_APPROVAL 占位
+        assertThrows(com.forge.common.ApiException.class, () -> service.start("p1", "env-1", "art-1"));
+    }
+
+    @Test
+    void cancelWithdrawsPendingApproval() {
+        Project p = project("p1");
+        Environment e = approvalEnv();
+        Artifact a = artifact(p);
+        stubStart(p, e, a);
+
+        Deployment dep = service.start("p1", "env-1", "art-1");
+        assertTrue(service.cancel(dep.getId()));
+        assertEquals(TaskStatus.CANCELLED, table.get(dep.getId()).getStatus());
     }
 }

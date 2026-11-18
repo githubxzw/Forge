@@ -53,7 +53,7 @@ async function doLogin() {
   loading.value = true
   try {
     const s = await login(username.value, password.value)
-    auth.setSession(s.token, s.username)
+    auth.setSession(s.token, s.username, s.role)
     router.push('/dashboard')
   } catch (e) { /* 错误已弹 */ }
   loading.value = false

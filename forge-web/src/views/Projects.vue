@@ -79,6 +79,11 @@
           <el-col :span="12"><el-form-item label="端口映射"><el-input v-model="ports" placeholder="8080:8080, 9090:9090" /></el-form-item></el-col>
         </el-row>
         <el-form-item label="Chart 路径"><el-input v-model="chartPath" placeholder="仓库内 chart 目录，空=使用内置模板" /></el-form-item>
+        <el-form-item label="Ingress 域名"><el-input v-model="ingressHost" placeholder="内置 chart 专用，如 app.example.com；空=不创建 Ingress" /></el-form-item>
+        <el-form-item label="最大副本数"><el-input v-model="maxReplicas" style="width: 120px" placeholder="大于副本数即启用 HPA" /></el-form-item>
+        <el-form-item label="定时构建"><el-input v-model="cron" placeholder="Cron 表达式，如 0 0 3 * * *（每天 3 点；空=不定时）" /></el-form-item>
+        <el-form-item label="Webhook 分支"><el-input v-model="webhookBranches" placeholder="逗号分隔，如 main,release/*；空=仅默认分支" /></el-form-item>
+        <el-form-item label="Webhook 目标"><el-input v-model="webhookTargets" placeholder="逗号分隔，如 IMAGE,CHART；空=按项目类型默认" /></el-form-item>
         <el-divider content-position="left">部署健康检查（可选）</el-divider>
         <el-form-item label="检查 URL"><el-input v-model="healthUrl" placeholder="http://host:port/actuator/health" /></el-form-item>
       </el-form>
@@ -106,6 +111,8 @@ const credKindLabel = (k: string) => ({ SSH_KEY: 'SSH私钥', PASSWORD: '密码'
 
 const buildCommand = ref(''); const outputDir = ref(''); const dockerfilePath = ref('')
 const imageName = ref(''); const containerPort = ref(''); const ports = ref(''); const chartPath = ref('')
+const cron = ref(''); const webhookBranches = ref(''); const webhookTargets = ref('')
+const ingressHost = ref(''); const maxReplicas = ref('')
 const healthUrl = ref('')
 
 const typeLabel = (t: string) => ({ FRONTEND: '前端', BACKEND: '后端', FULL: 'FULL' }[t] || t)
@@ -130,6 +137,11 @@ function openEdit(row: any) {
   containerPort.value = bc.containerPort ?? ''
   ports.value = Array.isArray(bc.ports) ? bc.ports.join(', ') : (bc.ports || '')
   chartPath.value = bc.chartPath || ''
+  cron.value = bc.cron || ''
+  webhookBranches.value = Array.isArray(bc.webhookBranches) ? bc.webhookBranches.join(', ') : (bc.webhookBranches || '')
+  webhookTargets.value = Array.isArray(bc.webhookTargets) ? bc.webhookTargets.join(', ') : (bc.webhookTargets || '')
+  ingressHost.value = bc.ingressHost || ''
+  maxReplicas.value = bc.maxReplicas ?? ''
   healthUrl.value = row?.healthCheck?.url || ''
   dialog.value = true
 }
@@ -143,6 +155,13 @@ function composeForm() {
   if (containerPort.value) bc.containerPort = Number(containerPort.value) || containerPort.value
   if (ports.value) bc.ports = ports.value.split(',').map((s: string) => s.trim()).filter(Boolean)
   if (chartPath.value) bc.chartPath = chartPath.value
+  if (cron.value.trim()) bc.cron = cron.value.trim()
+  if (ingressHost.value.trim()) bc.ingressHost = ingressHost.value.trim()
+  if (maxReplicas.value) bc.maxReplicas = Number(maxReplicas.value) || maxReplicas.value
+  const wb = webhookBranches.value.split(',').map((s: string) => s.trim()).filter(Boolean)
+  if (wb.length) bc.webhookBranches = wb
+  const wt = webhookTargets.value.split(',').map((s: string) => s.trim()).filter(Boolean)
+  if (wt.length) bc.webhookTargets = wt
   const body: any = { ...form.value, buildConfig: bc }
   // 清空健康检查 URL 时传空对象（后端对 null 字段不更新），HealthChecker 对空 URL 自动跳过
   body.healthCheck = { url: healthUrl.value.trim() }

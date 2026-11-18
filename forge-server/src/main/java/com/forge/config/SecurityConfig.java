@@ -58,6 +58,18 @@ public class SecurityConfig {
                     return "GET".equalsIgnoreCase(req.getMethod())
                             && !uri.startsWith("/api") && !uri.startsWith("/ws");
                 }).permitAll()
+                // ---- RBAC：ADMIN = 管理面（用户/令牌/设置/凭据/系统），OPERATOR = 日常操作，VIEWER = 只读 ----
+                .requestMatchers("/api/auth/password").authenticated() // 改自己密码是自助操作，任何角色可用
+                .requestMatchers("/api/users/**", "/api/tokens/**", "/api/settings/**",
+                        "/api/system/**", "/api/credentials/**").hasRole("ADMIN")
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/projects/**",
+                        "/api/environments/**", "/api/deployments/*/approve", "/api/deployments/*/reject").hasRole("ADMIN")
+                .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/projects/**", "/api/environments/**").hasRole("ADMIN")
+                .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/projects/**", "/api/environments/**").hasRole("ADMIN")
+                // 其余 /api/**：写操作 OPERATOR+，读 VIEWER+
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/**").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/**").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/**").hasAnyRole("ADMIN", "OPERATOR")
                 .anyRequest().authenticated())
             .exceptionHandling(eh -> eh.authenticationEntryPoint((req, resp, ex) -> {
                 resp.setStatus(401);

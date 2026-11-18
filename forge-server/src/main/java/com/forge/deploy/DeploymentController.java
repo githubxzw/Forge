@@ -61,6 +61,19 @@ public class DeploymentController {
         return ApiResult.ok(deployService.cancel(id));
     }
 
+    /** 审批通过（仅 ADMIN，路径级权限见 SecurityConfig）：待审批部署进入执行队列 */
+    @PostMapping("/{id}/approve")
+    public ApiResult<Deployment> approve(@PathVariable String id) {
+        return ApiResult.ok(deployService.approve(id));
+    }
+
+    /** 审批拒绝（仅 ADMIN）：落 REJECTED 终态 */
+    @PostMapping("/{id}/reject")
+    public ApiResult<Deployment> reject(@PathVariable String id, @RequestBody(required = false) Map<String, String> body) {
+        String reason = body == null ? null : body.get("reason");
+        return ApiResult.ok(deployService.reject(id, reason));
+    }
+
     @GetMapping
     public ApiResult<Page<Deployment>> list(@RequestParam(required = false) String projectId,
                                             @RequestParam(required = false) String envId,

@@ -7,6 +7,15 @@ env: {}
 healthCheck:
   enabled: false
   path: /
+ingress:
+  enabled: false
+  host: ""
+  className: nginx
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
 resources:
   requests:
     cpu: 100m

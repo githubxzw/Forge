@@ -38,6 +38,13 @@ public class Environment {
     @Column(columnDefinition = "text")
     private Map<String, String> vars;
 
+    /** 部署审批开关：开启后该环境的部署/回滚需管理员审批后才执行（历史行 null 视为关闭） */
+    private Boolean approvalRequired;
+
+    public boolean requiresApproval() {
+        return Boolean.TRUE.equals(approvalRequired);
+    }
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

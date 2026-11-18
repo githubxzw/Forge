@@ -19,6 +19,8 @@ public interface DeploymentRepository extends JpaRepository<Deployment, String> 
     List<Deployment> findByStatusIn(List<TaskStatus> statuses);
     List<Deployment> findByProjectId(String projectId);
     List<Deployment> findByCreatedAtAfter(java.time.LocalDateTime time);
+    /** 某项目在某环境的最近一次部署（持续监控取"当前在跑的版本"用） */
+    Deployment findFirstByProjectIdAndEnvironmentIdOrderByCreatedAtDesc(String projectId, String environmentId);
     boolean existsByArtifactId(String artifactId);
     boolean existsByEnvironmentId(String environmentId);
     boolean existsByEnvironmentIdAndStatusIn(String environmentId, List<TaskStatus> statuses);

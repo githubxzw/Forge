@@ -19,13 +19,11 @@ public class JwtService {
     private final long expireMs;
 
     public JwtService(ForgeProperties props) {
-        // 密钥来源：环境变量 FORGE_SECRET_KEY > {dataDir}/.jwt.secret（首次自动生成，重启不掉登录态）
-        String secret = System.getenv("FORGE_SECRET_KEY");
+        // 密钥来源：环境变量 FORGE_SECRET_KEY（32 字节 Base64，与凭据加密共用）> {dataDir}/.jwt.secret（首次自动生成，重启不掉登录态）
         byte[] bytes;
         try {
-            if (secret != null && !secret.isBlank()) {
-                bytes = Base64.getDecoder().decode(secret);
-            } else {
+            bytes = com.forge.common.SecretKeys.resolveEnvKey();
+            if (bytes == null) {
                 java.nio.file.Path keyFile = props.dataPath().resolve(".jwt.secret");
                 if (java.nio.file.Files.exists(keyFile)) {
                     bytes = Base64.getDecoder().decode(java.nio.file.Files.readString(keyFile).trim());
@@ -47,10 +45,11 @@ public class JwtService {
         this.expireMs = props.jwtExpire().toMillis();
     }
 
-    public String issue(String username) {
+    public String issue(String username, String role) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(username)
+                .claim("role", role)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expireMs))
                 .signWith(key)

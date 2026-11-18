@@ -56,11 +56,16 @@
         <template #="{ row }"><span class="mono muted">{{ resultSummary(row) }}</span></template>
       </el-table-column>
       <el-table-column label="时间" width="142"><template #="{ row }"><span class="muted">{{ fmt(row.createdAt) }}</span></template></el-table-column>
-      <el-table-column label="操作" width="172">
+      <el-table-column label="操作" width="220">
         <template #="{ row }">
           <el-button size="small" text type="primary" @click="openLog(row)">日志</el-button>
           <el-button v-if="row.status === 'SUCCESS'" size="small" text type="warning" @click="rollback(row)">回滚</el-button>
           <el-button v-if="row.status === 'RUNNING' || row.status === 'PENDING'" size="small" text type="danger" @click="cancel(row)">取消</el-button>
+          <template v-if="row.status === 'PENDING_APPROVAL'">
+            <el-button v-if="auth.isAdmin" size="small" text type="success" @click="approve(row)">审批</el-button>
+            <el-button v-if="auth.isAdmin" size="small" text type="danger" @click="reject(row)">拒绝</el-button>
+            <el-button v-if="!auth.isAdmin" size="small" text type="danger" @click="cancel(row)">撤回</el-button>
+          </template>
         </template>
       </el-table-column>
       <template #empty>
@@ -116,12 +121,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import {
   listProjects, listEnvironments, listArtifacts, listDeployments,
-  startDeploy, batchDeploy, rollbackDeploy, rollbackPreview, cancelDeploy, deployLogUrl
+  startDeploy, batchDeploy, rollbackDeploy, rollbackPreview, cancelDeploy, deployLogUrl,
+  approveDeploy, rejectDeploy
 } from '../api/api'
 import StatusTag from '../components/StatusTag.vue'
 import LogView from '../components/LogView.vue'
 import { Operation } from '@element-plus/icons-vue'
+import { useAuthStore } from '../stores/auth'
 
+const auth = useAuthStore()
 const route = useRoute()
 const projects = ref<any[]>([])
 const environments = ref<any[]>([])
@@ -191,10 +199,14 @@ async function doDeploy() {
   deploying.value = true
   try {
     const dep = await startDeploy(dProject.value, dEnv.value, dArtifact.value)
-    ElMessage.success('部署任务已提交')
+    if (dep.status === 'PENDING_APPROVAL') {
+      ElMessage.success('部署申请已提交，等待管理员审批')
+    } else {
+      ElMessage.success('部署任务已提交')
+    }
     page.value = 0
     await load()
-    openLog(dep)
+    if (dep.status !== 'PENDING_APPROVAL') openLog(dep)
   } catch (e) {}
   deploying.value = false
 }
@@ -210,9 +222,29 @@ async function rollback(row: any) {
     '回滚确认', { type: 'warning' }).then(() => true).catch(() => false)
   if (!ok) return
   const dep = await rollbackDeploy(row.id)
-  ElMessage.success('回滚任务已提交')
+  ElMessage.success(row.status === 'PENDING_APPROVAL' ? '回滚申请已提交，等待审批' : '回滚任务已提交')
   await load()
-  openLog(dep)
+  if (dep.status !== 'PENDING_APPROVAL') openLog(dep)
+}
+
+async function approve(row: any) {
+  const ok = await ElMessageBox.confirm(
+    `批准「${row.project?.name}」部署版本 ${row.artifact?.version} 到「${row.environment?.name}」？`,
+    '审批确认', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!ok) return
+  await approveDeploy(row.id)
+  ElMessage.success('已批准，部署进入执行队列')
+  await load()
+}
+
+async function reject(row: any) {
+  const { value } = await ElMessageBox.prompt('拒绝原因（可选）', '拒绝部署', {
+    inputPlaceholder: '如：版本不对，等下个构建', type: 'error'
+  }).catch(() => ({ value: null as string | null }))
+  if (value === null) return
+  await rejectDeploy(row.id, value)
+  ElMessage.success('已拒绝')
+  await load()
 }
 
 async function cancel(row: any) {

@@ -55,7 +55,8 @@ public class AuthController {
             throw new ApiException(401, "用户名或密码错误");
         }
         ATTEMPTS.remove(username);
-        return ApiResult.ok(Map.of("token", jwtService.issue(user.getUsername()), "username", user.getUsername()));
+        return ApiResult.ok(Map.of("token", jwtService.issue(user.getUsername(), user.roleOrDefault().name()),
+                "username", user.getUsername(), "role", user.roleOrDefault().name()));
     }
 
     private void recordFailure(String username, long[] attempt) {
@@ -77,7 +78,13 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResult<Map<String, String>> me() {
         String name = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return ApiResult.ok(Map.of("username", name));
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        String role = auth.getAuthorities().stream()
+                .map(String::valueOf)
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .findFirst().orElse("VIEWER");
+        return ApiResult.ok(Map.of("username", name, "role", role));
     }
 
     /** 签发一次性短效 ticket（需 JWT 头鉴权）：供 WS 握手与日志下载等无法带头的通道使用 */

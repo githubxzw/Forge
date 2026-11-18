@@ -91,6 +91,10 @@
           </el-row>
         </template>
 
+        <el-form-item label="部署审批">
+          <el-switch v-model="approvalRequired" />
+          <div class="muted">开启后该环境的部署/回滚需管理员审批后才执行（操作员发起，管理员审批）</div>
+        </el-form-item>
         <el-form-item label="环境变量">
           <el-input v-model="varsText" type="textarea" :rows="3" placeholder="KEY=VALUE 每行一条&#10;java.opts=-Xms512m&#10;helm.replicaCount=2" />
           <div class="muted">java.opts/server.port 用于 SSH 部署；helm.* 作为 --set 注入 K8s；其余注入容器环境</div>
@@ -119,6 +123,7 @@ const testing = ref('')
 const host = ref(''); const port = ref(''); const username = ref(''); const credentialId = ref('')
 const deployDir = ref(''); const keepReleases = ref(''); const systemdService = ref(''); const javaHome = ref('')
 const composeDir = ref(''); const kubeconfigCredentialId = ref(''); const namespace = ref('')
+const approvalRequired = ref(false)
 const varsText = ref('')
 
 const connSummary = (row: any) => {
@@ -141,6 +146,7 @@ function openEdit(row: any) {
   javaHome.value = c.javaHome || ''
   composeDir.value = c.composeDir || ''; kubeconfigCredentialId.value = c.kubeconfigCredentialId || ''
   namespace.value = c.namespace || ''
+  approvalRequired.value = !!row?.approvalRequired
   const vars = row?.vars || {}
   varsText.value = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')
   dialog.value = true
@@ -170,7 +176,7 @@ function composeForm() {
     const i = l.indexOf('=')
     vars[l.slice(0, i).trim()] = l.slice(i + 1).trim()
   })
-  return { ...form.value, connConfig: c, vars }
+  return { ...form.value, connConfig: c, vars, approvalRequired: approvalRequired.value }
 }
 
 async function save() {

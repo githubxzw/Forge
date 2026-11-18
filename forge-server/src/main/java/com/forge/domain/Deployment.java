@@ -33,6 +33,9 @@ public class Deployment {
     /** 回滚指向的 Deployment id（全新部署为 null） */
     private String rollbackOf;
 
+    /** 回滚目标 helm revision（审批通过后才执行的场景需持久化，等待期不能只存内存） */
+    private Integer rollbackRevision;
+
     /** 结果：{durationMs, revision?, health?...} */
     @Convert(converter = Converters.MapConverter.class)
     @Column(columnDefinition = "text")

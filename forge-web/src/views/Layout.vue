@@ -22,9 +22,9 @@
         </el-menu-item-group>
         <el-menu-item-group>
           <template #title>系统配置</template>
-          <el-menu-item index="/environments"><el-icon><Monitor /></el-icon>环境管理</el-menu-item>
-          <el-menu-item index="/credentials"><el-icon><Key /></el-icon>凭据管理</el-menu-item>
-          <el-menu-item index="/settings"><el-icon><Setting /></el-icon>系统设置</el-menu-item>
+          <el-menu-item v-if="auth.isAdmin" index="/environments"><el-icon><Monitor /></el-icon>环境管理</el-menu-item>
+          <el-menu-item v-if="auth.isAdmin" index="/credentials"><el-icon><Key /></el-icon>凭据管理</el-menu-item>
+          <el-menu-item v-if="auth.isAdmin" index="/settings"><el-icon><Setting /></el-icon>系统设置</el-menu-item>
           <el-menu-item index="/manual"><el-icon><Reading /></el-icon>使用手册</el-menu-item>
         </el-menu-item-group>
       </el-menu>
@@ -32,7 +32,7 @@
         <el-avatar :size="32" class="avatar">{{ auth.username?.[0]?.toUpperCase() }}</el-avatar>
         <div class="uinfo">
           <div class="uname">{{ auth.username }}</div>
-          <div class="urole">管理员</div>
+          <div class="urole">{{ auth.roleName }}</div>
         </div>
         <el-tooltip content="退出登录" placement="top">
           <el-button text circle class="logout" @click="doLogout"><el-icon><SwitchButton /></el-icon></el-button>

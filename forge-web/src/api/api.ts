@@ -2,11 +2,32 @@ import { http, unwrap } from './http'
 
 // ---------- 认证 ----------
 export const login = (username: string, password: string) =>
-  unwrap<{ token: string; username: string }>(http.post('/auth/login', { username, password }))
+  unwrap<{ token: string; username: string; role: string }>(http.post('/auth/login', { username, password }))
 export const changePassword = (oldPassword: string, newPassword: string) =>
   unwrap(http.post('/auth/password', { oldPassword, newPassword }))
 /** 一次性短效 ticket：WS 握手与日志下载等无法带 Authorization 头的通道使用 */
 export const fetchTicket = () => unwrap<string>(http.get('/auth/ticket'))
+
+// ---------- API Token（脚本调用 REST API 的长期凭证） ----------
+export const listTokens = () => unwrap<any[]>(http.get('/tokens'))
+export const createToken = (name: string) => unwrap<any>(http.post('/tokens', { name }))
+export const deleteToken = (id: string) => unwrap(http.delete(`/tokens/${id}`))
+
+// ---------- 用户管理（仅 ADMIN） ----------
+export const listUsers = () => unwrap<any[]>(http.get('/users'))
+export const createUser = (data: { username: string; password: string; role: string }) =>
+  unwrap(http.post('/users', data))
+export const updateUser = (id: string, data: { role?: string; newPassword?: string }) =>
+  unwrap(http.put(`/users/${id}`, data))
+export const deleteUser = (id: string) => unwrap(http.delete(`/users/${id}`))
+
+// ---------- 部署审批（仅 ADMIN） ----------
+export const approveDeploy = (id: string) => unwrap<any>(http.post(`/deployments/${id}/approve`))
+export const rejectDeploy = (id: string, reason: string) =>
+  unwrap<any>(http.post(`/deployments/${id}/reject`, { reason }))
+
+// ---------- 持续监控 ----------
+export const monitorStatus = () => unwrap<any[]>(http.get('/monitor/status'))
 
 // ---------- 项目 ----------
 export const listProjects = () => unwrap<any[]>(http.get('/projects'))

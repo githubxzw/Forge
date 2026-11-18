@@ -23,6 +23,15 @@ public class AppUser {
     @Column(nullable = false)
     private String password;
 
+    /** 角色；历史行可能为 null（升级前创建），取值统一走 roleOrDefault() */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private UserRole role;
+
+    public UserRole roleOrDefault() {
+        return role == null ? UserRole.ADMIN : role;
+    }
+
     /** 最近一次修改密码的时间：该时间之前签发的 JWT 全部失效 */
     private LocalDateTime passwordChangedAt;
 

@@ -94,13 +94,31 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-card v-if="healthRows.length" shadow="never" style="margin-top: 14px">
+      <template #header>
+        <div class="list-head">
+          <span>服务健康监控<span v-if="unhealthyCount" style="color: var(--el-color-danger);margin-left:8px">{{ unhealthyCount }} 项异常</span></span>
+          <span class="muted">按项目健康检查配置持续探测，异常自动通知</span>
+        </div>
+      </template>
+      <el-table :data="healthRows" size="small">
+        <el-table-column label="项目" #="{ row }">{{ row.project }}</el-table-column>
+        <el-table-column label="环境" width="140" #="{ row }">{{ row.environment }}</el-table-column>
+        <el-table-column label="地址" show-overflow-tooltip #="{ row }"><span class="mono muted">{{ row.url }}</span></el-table-column>
+        <el-table-column label="状态" width="110" #="{ row }">
+          <status-tag :status="row.healthy ? 'SUCCESS' : 'FAILED'" />
+        </el-table-column>
+        <el-table-column label="异常始于" width="140" #="{ row }"><span class="muted">{{ row.unhealthySince ? fmt(row.unhealthySince) : '-' }}</span></el-table-column>
+      </el-table>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Folder, Cpu, Box, Promotion, Reading } from '@element-plus/icons-vue'
-import { stats } from '../api/api'
+import { stats, monitorStatus } from '../api/api'
 import dayjs from 'dayjs'
 import StatusTag from '../components/StatusTag.vue'
 
@@ -112,7 +130,12 @@ const cards = [
 ]
 
 const s = ref<any>({})
-onMounted(async () => { s.value = await stats() })
+const healthRows = ref<any[]>([])
+const unhealthyCount = computed(() => healthRows.value.filter(r => !r.healthy).length)
+onMounted(async () => {
+  s.value = await stats()
+  try { healthRows.value = await monitorStatus() } catch (e) { /* 监控未启用或无权限时静默 */ }
+})
 const fmt = (t: string) => (t ? dayjs(t).format('MM-DD HH:mm') : '-')
 
 /** 无数据时圆环显示中性符号，避免误导性的 0% */

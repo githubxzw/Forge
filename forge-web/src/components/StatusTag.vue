@@ -8,10 +8,12 @@ import { computed } from 'vue'
 const props = defineProps<{ status: string }>()
 const map: Record<string, { label: string; cls: string }> = {
   PENDING: { label: '排队中', cls: 's-tag--info' },
+  PENDING_APPROVAL: { label: '待审批', cls: 's-tag--warn' },
   RUNNING: { label: '进行中', cls: 's-tag--running' },
   SUCCESS: { label: '成功', cls: 's-tag--success' },
   FAILED: { label: '失败', cls: 's-tag--failed' },
-  CANCELLED: { label: '已取消', cls: 's-tag--info' }
+  CANCELLED: { label: '已取消', cls: 's-tag--info' },
+  REJECTED: { label: '已拒绝', cls: 's-tag--failed' }
 }
 const label = computed(() => map[props.status]?.label || props.status)
 const cls = computed(() => map[props.status]?.cls || 's-tag--info')

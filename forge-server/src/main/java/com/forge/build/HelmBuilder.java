@@ -4,8 +4,8 @@ import com.forge.common.ApiException;
 import com.forge.domain.Artifact;
 import com.forge.domain.ArtifactType;
 import com.forge.domain.BuildTarget;
+import com.forge.domain.Project;
 import com.forge.domain.ProjectType;
-import com.forge.infra.process.ProcessRunner;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -41,25 +41,15 @@ public class HelmBuilder implements Builder {
         if (builtin) {
             chartDir = ctx.getWorkDir().resolve("forge-chart");
             ClasspathTemplates.copyChart(chartDir, ctx.getProject().getCode());
-            // 内置模板：镜像信息直接写入 values.yaml
-            String values = """
-                    replicaCount: %d
-                    image:
-                      repository: %s
-                      tag: "%s"
-                    containerPort: %d
-                    env: {}
-                    healthCheck:
-                      enabled: false
-                      path: /
-                    resources:
-                      requests:
-                        cpu: 100m
-                        memory: 256Mi
-                      limits:
-                        cpu: "1"
-                        memory: 512Mi
-                    """.formatted(replicas, imageName, imageTag, containerPort);
+            // 内置模板：镜像信息直接写入 values.yaml；项目配置了健康检查路径时同步启用 K8s 探针
+            //（deployment.yaml 本就支持 readiness/liveness，此前硬编码 enabled: false 白白浪费）
+            String hcPath = healthCheckPath(ctx.getProject());
+            // Ingress：buildConfig.ingressHost 配置即启用；HPA：maxReplicas > replicas 即启用
+            String ingressHost = ctx.config("ingressHost");
+            int maxReplicas = intConfig(ctx, "maxReplicas", 0);
+            String values = renderBuiltinValues(replicas, imageName, imageTag, containerPort,
+                    hcPath != null, hcPath == null ? "/" : hcPath,
+                    ingressHost, maxReplicas);
             try {
                 Files.writeString(chartDir.resolve("values.yaml"), values);
             } catch (IOException e) {
@@ -87,7 +77,7 @@ public class HelmBuilder implements Builder {
                 chartDir.toAbsolutePath().toString(),
                 "--version", ctx.getVersion(), "--app-version", ctx.getVersion(),
                 "-d", out.toAbsolutePath().toString()));
-        ProcessRunner.run(cmd, null, ctx.getEnv(), ctx.getLog(), null, 600);
+        ctx.run(cmd, null, 600);
 
         Path tgz = findTgz(out).orElseThrow(() -> new ApiException("helm package 未产出 tgz"));
         Path artifactDir = ctx.getArtifactRoot().resolve(ctx.getProject().getCode()).resolve("chart");
@@ -112,6 +102,58 @@ public class HelmBuilder implements Builder {
                 "sets", sets,
                 "chartSource", builtin ? "builtin" : "custom"));
         return artifact;
+    }
+
+    /** 项目健康检查配置的 path（url 形式配置时取其路径部分）；未配置返回 null → 内置 chart 不启用探针 */
+    static String healthCheckPath(Project project) {
+        Map<String, Object> hc = project.getHealthCheck();
+        if (hc == null) return null;
+        Object path = hc.get("path");
+        if (path instanceof String s && !s.isBlank()) return s;
+        Object url = hc.get("url");
+        if (url instanceof String u && !u.isBlank()) {
+            try {
+                var uri = java.net.URI.create(u.trim());
+                return (uri.getPath() == null || uri.getPath().isBlank()) ? "/" : uri.getPath();
+            } catch (Exception ignore) {}
+        }
+        return null;
+    }
+
+    static String renderBuiltinValues(int replicas, String image, String tag, int containerPort,
+                                      boolean healthEnabled, String healthPath,
+                                      String ingressHost, int maxReplicas) {
+        boolean ingressEnabled = ingressHost != null && !ingressHost.isBlank();
+        boolean hpaEnabled = maxReplicas > replicas;
+        return """
+                replicaCount: %d
+                image:
+                  repository: %s
+                  tag: "%s"
+                containerPort: %d
+                env: {}
+                healthCheck:
+                  enabled: %b
+                  path: %s
+                ingress:
+                  enabled: %b
+                  host: "%s"
+                  className: nginx
+                autoscaling:
+                  enabled: %b
+                  minReplicas: %d
+                  maxReplicas: %d
+                  targetCPUUtilizationPercentage: 80
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 256Mi
+                  limits:
+                    cpu: "1"
+                    memory: 512Mi
+                """.formatted(replicas, image, tag, containerPort, healthEnabled, healthPath,
+                ingressEnabled, ingressEnabled ? ingressHost : "",
+                hpaEnabled, replicas, Math.max(maxReplicas, replicas));
     }
 
     private int intConfig(BuildContext ctx, String key, int def) {

@@ -44,9 +44,17 @@ public class DataInitializer implements CommandLineRunner {
             AppUser admin = new AppUser();
             admin.setUsername(props.getAdmin().getUsername());
             admin.setPassword(passwordEncoder.encode(props.getAdmin().getPassword()));
+            admin.setRole(com.forge.domain.UserRole.ADMIN);
             userRepository.save(admin);
             log.info("已创建管理员账号: {}（请尽快修改默认密码）", admin.getUsername());
         }
+        // 升级回填：role 列加入前创建的用户一律视为管理员
+        userRepository.findAll().forEach(u -> {
+            if (u.getRole() == null) {
+                u.setRole(com.forge.domain.UserRole.ADMIN);
+                userRepository.save(u);
+            }
+        });
     }
 
     /** 服务重启后，将悬挂的进行中任务标记为中断 */

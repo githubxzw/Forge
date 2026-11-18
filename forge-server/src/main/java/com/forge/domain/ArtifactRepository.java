@@ -12,4 +12,5 @@ public interface ArtifactRepository extends JpaRepository<Artifact, String> {
     List<Artifact> findByProjectIdAndTypeOrderByCreatedAtDesc(String projectId, ArtifactType type);
     Page<Artifact> findByProjectIdAndTypeOrderByCreatedAtDesc(String projectId, ArtifactType type, Pageable pageable);
     List<Artifact> findByProjectId(String projectId);
+    List<Artifact> findByType(ArtifactType type);
 }

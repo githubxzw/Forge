@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.locks.ReentrantLock;
@@ -87,24 +88,80 @@ public class DeployService {
     /** 同环境串行锁：assertEnvIdle 是 check-then-act，并发提交会同时通过检查互相踩踏 */
     private final ConcurrentHashMap<String, ReentrantLock> envLocks = new ConcurrentHashMap<>();
 
-    /** 同环境并发保护：同一台目标机同时只能有一个部署（软链切换/容器启停会互相踩踏） */
+    /** 已请求取消的部署 id：runDeployment 据此区分 CANCELLED 与 FAILED（与 BuildService 同一语义） */
+    private final Set<String> cancelled = ConcurrentHashMap.newKeySet();
+
+    /** 同环境并发保护：同一台目标机同时只能有一个部署（软链切换/容器启停会互相踩踏）；待审批的也占位 */
     private void assertEnvIdle(String envId) {
-        if (deploymentRepository.existsByEnvironmentIdAndStatusIn(envId, List.of(TaskStatus.PENDING, TaskStatus.RUNNING))) {
-            throw new ApiException("该环境有正在执行或排队的部署，请等待完成后再提交");
+        if (deploymentRepository.existsByEnvironmentIdAndStatusIn(envId,
+                List.of(TaskStatus.PENDING, TaskStatus.PENDING_APPROVAL, TaskStatus.RUNNING))) {
+            throw new ApiException("该环境有正在执行或排队（含待审批）的部署，请等待完成后再提交");
         }
     }
 
-    /** 「检查空闲 + 建记录 + 提交执行」整体持同环境锁，消除竞态窗口 */
+    /** 「检查空闲 + 建记录 + 提交执行」整体持同环境锁，消除竞态窗口；审批环境只建待审批记录 */
     private Deployment lockedCreateAndSubmit(Project project, Environment env, Artifact artifact,
                                              String rollbackOf, Integer rollbackRevision) {
         ReentrantLock lock = envLocks.computeIfAbsent(env.getId(), k -> new ReentrantLock());
         lock.lock();
         try {
             assertEnvIdle(env.getId());
+            if (env.requiresApproval()) {
+                return createRecord(project, env, artifact, rollbackOf, rollbackRevision, TaskStatus.PENDING_APPROVAL);
+            }
             return createAndSubmit(project, env, artifact, rollbackOf, rollbackRevision);
         } finally {
             lock.unlock();
         }
+    }
+
+    /** 审批通过：从待审批进入执行队列；拒绝：落 REJECTED 终态 */
+    public Deployment approve(String depId) {
+        ReentrantLock lock = lockOf(depId);
+        lock.lock();
+        try {
+            Deployment dep = deploymentRepository.findById(depId)
+                    .orElseThrow(() -> ApiException.notFound("部署记录"));
+            if (dep.getStatus() != TaskStatus.PENDING_APPROVAL) throw new ApiException("该部署不在待审批状态");
+            String approver = currentOperator();
+            dep.setStatus(TaskStatus.PENDING);
+            Map<String, Object> result = dep.getResult() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(dep.getResult());
+            result.put("approvedBy", approver);
+            dep.setResult(result);
+            dep = deploymentRepository.save(dep);
+            Integer rev = dep.getRollbackRevision();
+            try {
+                deployExecutor.submit(() -> execute(depId, rev));
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                dep.setStatus(TaskStatus.FAILED);
+                dep.setMessage("部署队列已满，请稍后重试");
+                dep.setFinishedAt(LocalDateTime.now());
+                deploymentRepository.save(dep);
+                logStreamService.finish("deploy:" + depId);
+                throw new ApiException("部署队列已满，请稍后重试");
+            }
+            return dep;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Deployment reject(String depId, String reason) {
+        Deployment dep = deploymentRepository.findById(depId)
+                .orElseThrow(() -> ApiException.notFound("部署记录"));
+        if (dep.getStatus() != TaskStatus.PENDING_APPROVAL) throw new ApiException("该部署不在待审批状态");
+        dep.setStatus(TaskStatus.REJECTED);
+        dep.setMessage("审批拒绝" + (reason == null || reason.isBlank() ? "" : "：" + reason));
+        dep.setFinishedAt(LocalDateTime.now());
+        dep = deploymentRepository.save(dep);
+        logStreamService.finish("deploy:" + depId);
+        notifyResult(dep);
+        return dep;
+    }
+
+    private ReentrantLock lockOf(String depId) {
+        Deployment dep = deploymentRepository.findById(depId).orElseThrow(() -> ApiException.notFound("部署记录"));
+        return envLocks.computeIfAbsent(dep.getEnvironment().getId(), k -> new ReentrantLock());
     }
 
     public Deployment start(String projectId, String envId, String artifactId) {
@@ -122,6 +179,7 @@ public class DeployService {
     public List<Deployment> startBatch(String envId, List<BatchItem> items) {
         if (items == null || items.isEmpty()) throw new ApiException("批量部署列表为空");
         Environment env = environmentService.require(envId);
+        if (env.requiresApproval()) throw new ApiException("该环境开启了部署审批，批量部署暂不支持，请逐个发起");
         deployers.stream().filter(d -> d.kind() == env.getKind()).findFirst()
                 .orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
 
@@ -137,10 +195,22 @@ public class DeployService {
                 if (!artifact.getProject().getId().equals(item.getProjectId())) {
                     throw new ApiException("制品不属于项目: " + project.getCode());
                 }
-                created.add(createRecord(project, env, artifact, null, null));
+                created.add(createRecord(project, env, artifact, null, null, TaskStatus.PENDING));
             }
             List<String> ids = created.stream().map(Deployment::getId).toList();
-            deployExecutor.submit(() -> runBatch(ids));
+            try {
+                deployExecutor.submit(() -> runBatch(ids));
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                // 队列满：整批标 FAILED，否则批量记录永远卡 PENDING
+                for (Deployment d : created) {
+                    d.setStatus(TaskStatus.FAILED);
+                    d.setMessage("部署队列已满，请稍后重试");
+                    d.setFinishedAt(LocalDateTime.now());
+                    deploymentRepository.save(d);
+                    logStreamService.finish("deploy:" + d.getId());
+                }
+                throw new ApiException("部署队列已满，请稍后重试");
+            }
             return created;
         } finally {
             lock.unlock();
@@ -160,7 +230,7 @@ public class DeployService {
                 logStreamService.finish("deploy:" + id);
                 continue;
             }
-            TaskStatus finalStatus = runDeployment(dep, null);
+            TaskStatus finalStatus = runDeployment(id, null);
             if (finalStatus != TaskStatus.SUCCESS) stopped = true;
         }
     }
@@ -208,21 +278,32 @@ public class DeployService {
 
     private Deployment createAndSubmit(Project project, Environment env, Artifact artifact,
                                        String rollbackOf, Integer rollbackRevision) {
-        Deployment dep = createRecord(project, env, artifact, rollbackOf, rollbackRevision);
+        Deployment dep = createRecord(project, env, artifact, rollbackOf, rollbackRevision, TaskStatus.PENDING);
         String depId = dep.getId();
         Integer revF = rollbackRevision;
-        deployExecutor.submit(() -> execute(depId, revF));
+        try {
+            deployExecutor.submit(() -> execute(depId, revF));
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // 队列满不处理的话记录会永远卡 PENDING（同环境锁也因此被占住，后续部署全部被拒）
+            dep.setStatus(TaskStatus.FAILED);
+            dep.setMessage("部署队列已满，请稍后重试");
+            dep.setFinishedAt(LocalDateTime.now());
+            deploymentRepository.save(dep);
+            logStreamService.finish("deploy:" + depId);
+            throw new ApiException("部署队列已满，请稍后重试");
+        }
         return dep;
     }
 
     private Deployment createRecord(Project project, Environment env, Artifact artifact,
-                                    String rollbackOf, Integer rollbackRevision) {
+                                    String rollbackOf, Integer rollbackRevision, TaskStatus initialStatus) {
         Deployment dep = new Deployment();
         dep.setProject(project);
         dep.setEnvironment(env);
         dep.setArtifact(artifact);
-        dep.setStatus(TaskStatus.PENDING); // 执行时置为 RUNNING；批量场景前序未完成时显示"排队中"
+        dep.setStatus(initialStatus); // 执行时置为 RUNNING；批量场景前序未完成时显示"排队中"；审批环境先待审批
         dep.setRollbackOf(rollbackOf);
+        dep.setRollbackRevision(rollbackRevision);
         dep.setOperator(currentOperator());
         dep = deploymentRepository.save(dep);
         // logPath 依赖 @UuidGenerator 生成的 id，必须在 save 之后回填，否则落库 "deploy-null.log" 导致下载 404
@@ -231,14 +312,19 @@ public class DeployService {
     }
 
     void execute(String depId, Integer rollbackRevision) {
-        Deployment dep = deploymentRepository.findById(depId).orElse(null);
-        if (dep == null) return;
-        runDeployment(dep, rollbackRevision);
+        runDeployment(depId, rollbackRevision);
     }
 
     /** 执行单次部署（含健康检查与通知），返回数据库中的最终状态（供批量编排判断） */
-    private TaskStatus runDeployment(Deployment dep, Integer rollbackRevision) {
-        String depId = dep.getId();
+    private TaskStatus runDeployment(String depId, Integer rollbackRevision) {
+        // 重读库内记录：批量场景从创建到执行之间状态可能已被取消操作改写
+        Deployment dep = deploymentRepository.findById(depId).orElse(null);
+        if (dep == null) return TaskStatus.FAILED;
+        if (dep.getStatus() == TaskStatus.CANCELLED) {
+            cancelled.remove(depId);
+            logStreamService.finish("deploy:" + depId);
+            return TaskStatus.CANCELLED;
+        }
         LogSink sink = logStreamService.sink("deploy:" + depId, props.logPath().resolve("deploy-" + depId + ".log"));
         try {
             dep.setStatus(TaskStatus.RUNNING);
@@ -249,6 +335,10 @@ public class DeployService {
             Deployer deployer = deployers.stream().filter(d -> d.kind() == depRef.getEnvironment().getKind())
                     .findFirst().orElseThrow(() -> new ApiException("该环境类型暂无部署器"));
             Path artifactFile = artifactService.resolveFile(dep.getArtifact());
+            // 上传/执行前校验制品完整性：sha256 与入库值不一致说明磁盘文件损坏，拒绝出库
+            if (artifactService.verifyChecksum(dep.getArtifact())) {
+                sink.line("[forge] 制品 sha256 校验通过");
+            }
 
             DeployContext ctx = DeployContext.builder()
                     .project(dep.getProject())
@@ -258,6 +348,7 @@ public class DeployService {
                     .settings(settingService)
                     .sshService(sshService)
                     .artifactFile(artifactFile)
+                    .onCancel(h -> taskRegistry.register(depId, h))
                     .rollbackRevision(rollbackRevision)
                     .build();
 
@@ -272,12 +363,15 @@ public class DeployService {
             sink.line("");
             sink.line("[forge] 部署成功 ✔");
         } catch (Exception e) {
+            boolean wasCancelled = cancelled.remove(depId);
             sink.line("");
-            sink.line("[forge] 部署失败: " + e.getMessage());
-            log.warn("deploy {} failed", depId, e);
-            dep.setStatus(TaskStatus.FAILED);
-            dep.setMessage(e.getMessage());
+            sink.line(wasCancelled ? "[forge] 部署已取消" : "[forge] 部署失败: " + e.getMessage());
+            if (!wasCancelled) log.warn("deploy {} failed", depId, e);
+            dep.setStatus(wasCancelled ? TaskStatus.CANCELLED : TaskStatus.FAILED);
+            dep.setMessage(wasCancelled ? "已取消" : e.getMessage());
         } finally {
+            // 健康检查阶段取消不会被中断（部署照常收尾），标记必须清掉防止集合膨胀
+            cancelled.remove(depId);
             dep.setFinishedAt(LocalDateTime.now());
             deploymentRepository.save(dep);
             taskRegistry.unregister(depId);
@@ -288,7 +382,11 @@ public class DeployService {
     }
 
     private void notifyResult(Deployment dep) {
-        String title = "Forge 部署" + ("SUCCESS".equals(String.valueOf(dep.getStatus())) ? "成功" : "失败");
+        String title = switch (String.valueOf(dep.getStatus())) {
+            case "SUCCESS" -> "Forge 部署成功";
+            case "CANCELLED" -> "Forge 部署已取消";
+            default -> "Forge 部署失败";
+        };
         String msg = String.format("项目：%s\n环境：%s（%s）\n版本：%s\n操作人：%s%s",
                 dep.getProject().getName(),
                 dep.getEnvironment().getName(),
@@ -301,7 +399,20 @@ public class DeployService {
 
     public boolean cancel(String depId) {
         Deployment dep = deploymentRepository.findById(depId).orElseThrow(() -> ApiException.notFound("部署记录"));
+        // 待审批的部署可由发起人撤回（runDeployment 执行前会重读状态并跳过）
+        if (dep.getStatus() == TaskStatus.PENDING || dep.getStatus() == TaskStatus.PENDING_APPROVAL) {
+            // 排队/待审批中的部署：直接落终态；runDeployment 执行前会重读状态并跳过
+            cancelled.add(depId);
+            dep.setStatus(TaskStatus.CANCELLED);
+            dep.setMessage("已取消（排队中）");
+            dep.setFinishedAt(LocalDateTime.now());
+            deploymentRepository.save(dep);
+            logStreamService.finish("deploy:" + depId);
+            return true;
+        }
         if (dep.getStatus() != TaskStatus.RUNNING) return false;
+        cancelled.add(depId);
+        // 关闭已登记的句柄（SSH 会话断开 → 上传/exec 立即失败；本地进程整树击杀 → helm/compose 退出）
         return taskRegistry.cancel(depId);
     }
 
