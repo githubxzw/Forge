@@ -5,7 +5,6 @@ import com.forge.domain.ArtifactType;
 import com.forge.domain.EnvKind;
 import com.forge.domain.ProjectType;
 import com.forge.infra.log.LogSink;
-import com.forge.infra.process.ProcessRunner;
 import com.forge.infra.ssh.SshExecutor;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +45,8 @@ public class DockerDeployer implements Deployer {
 
         if (remote) {
             try (SshExecutor ssh = ctx.getSshService().connect(ctx.getEnvironment())) {
+                // 登记取消句柄：断开会话可中止进行中的镜像传输/远端命令
+                ctx.registerCancel(ssh::close);
                 log.line("[forge] 连接 " + host + " 成功");
                 ssh.uploadText(content, composeFile, log);
                 ensureImageOnRemote(ctx, ssh);
@@ -103,9 +104,8 @@ public class DockerDeployer implements Deployer {
             throw new ApiException(500, "创建临时文件失败: " + e.getMessage());
         }
         try {
-            // docker save 管道 gzip 压缩后落盘
-            ProcessRunner.run(List.of("sh", "-c", "docker save " + ref + " | gzip > " + tmp),
-                    null, null, log, null, 1800);
+            // docker save 管道 gzip 压缩后落盘（经 ctx.run 登记取消句柄，取消部署可中断导出）
+            ctx.run(List.of("sh", "-c", "docker save " + ref + " | gzip > " + tmp), null, 1800);
             long mb = Files.size(tmp) / 1048576;
             log.line("[forge] 上传镜像（约 " + mb + " MB）...");
             ssh.upload(tmp, "/tmp/forge-image.tar.gz", log);
@@ -121,11 +121,9 @@ public class DockerDeployer implements Deployer {
     }
 
     private void runLocal(String composeFile, String code, DeployContext ctx) {
-        LogSink log = ctx.getLog();
-        ProcessRunner.run(List.of("docker", "compose", "-p", code, "-f", composeFile, "up", "-d"),
-                null, null, log, null, 1800);
-        log.line("[forge] 容器已启动");
-        ProcessRunner.run(List.of("docker", "compose", "-p", code, "ps"), null, null, log, null, 60);
+        ctx.run(List.of("docker", "compose", "-p", code, "-f", composeFile, "up", "-d"), null, 1800);
+        ctx.getLog().line("[forge] 容器已启动");
+        ctx.run(List.of("docker", "compose", "-p", code, "ps"), null, 60);
     }
 
     /** 渲染 compose 内容：镜像 + 端口 + 环境变量 */

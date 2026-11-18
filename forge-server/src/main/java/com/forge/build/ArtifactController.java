@@ -80,6 +80,8 @@ public class ArtifactController {
     @GetMapping("/{id}/download")
     public ResponseEntity<FileSystemResource> download(@PathVariable String id) {
         Artifact artifact = artifactService.require(id);
+        // 出库前校验完整性：sha256 不一致说明文件损坏，拒绝下载
+        artifactService.verifyChecksum(artifact);
         Path file = artifactService.resolveFile(artifact);
         if (file == null) throw new ApiException("镜像制品不支持下载，请使用 docker pull");
         String filename = file.getFileName().toString();

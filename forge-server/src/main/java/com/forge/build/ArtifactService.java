@@ -61,6 +61,21 @@ public class ArtifactService {
         return file;
     }
 
+    /**
+     * 校验制品文件 sha256 与入库值一致——部署上传前与下载出库前调用，磁盘损坏/被篡改的制品拒绝流出。
+     * 镜像制品（仅 tag 引用）与历史无校验和的制品跳过，返回是否实际执行了校验。
+     */
+    public boolean verifyChecksum(Artifact artifact) {
+        if (artifact.getType() == ArtifactType.IMAGE) return false;
+        if (artifact.getChecksum() == null || artifact.getChecksum().isBlank()) return false;
+        Path file = resolveFile(artifact);
+        String actual = TarUtils.sha256(file);
+        if (!actual.equalsIgnoreCase(artifact.getChecksum())) {
+            throw new ApiException(500, "制品 sha256 校验失败（文件可能损坏或被篡改）: " + artifact.getRef());
+        }
+        return true;
+    }
+
     /** 已被部署记录引用的制品不允许删除（外键 + 可追溯性） */
     public void assertNotReferenced(Artifact artifact) {
         if (deploymentRepository.existsByArtifactId(artifact.getId())) {

@@ -27,21 +27,21 @@ public class CryptoService {
     public CryptoService(@Value("${forge.data-dir}") String dataDir) {
         try {
             Path keyFile = Path.of(dataDir, ".secret.key");
-            String b64;
-            String env = System.getenv("FORGE_SECRET_KEY");
-            if (env != null && !env.isBlank()) {
-                b64 = env;
-            } else if (Files.exists(keyFile)) {
-                b64 = Files.readString(keyFile).trim();
-            } else {
-                byte[] bytes = new byte[32];
-                new SecureRandom().nextBytes(bytes);
-                b64 = Base64.getEncoder().encodeToString(bytes);
-                Files.createDirectories(keyFile.getParent());
-                writePrivate(keyFile, b64);
+            byte[] bytes = com.forge.common.SecretKeys.resolveEnvKey();
+            if (bytes == null) {
+                String b64;
+                if (Files.exists(keyFile)) {
+                    b64 = Files.readString(keyFile).trim();
+                    bytes = Base64.getDecoder().decode(b64);
+                } else {
+                    bytes = new byte[32];
+                    new SecureRandom().nextBytes(bytes);
+                    b64 = Base64.getEncoder().encodeToString(bytes);
+                    Files.createDirectories(keyFile.getParent());
+                    writePrivate(keyFile, b64);
+                }
+                if (bytes.length != 32) throw new ApiException(500, "密钥文件 .secret.key 损坏（需 32 字节）");
             }
-            byte[] bytes = Base64.getDecoder().decode(b64);
-            if (bytes.length != 32) throw new ApiException(500, "FORGE_SECRET_KEY 必须是 32 字节的 Base64");
             key = new SecretKeySpec(bytes, "AES");
         } catch (ApiException e) {
             throw e;

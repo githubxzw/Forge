@@ -69,7 +69,7 @@ public class K8sDeployer implements Deployer {
         com.forge.infra.log.LogSink log = ctx.getLog();
         try {
             log.line("[forge] 执行: " + String.join(" ", cmd));
-            ProcessRunner.run(cmd, null, null, log, null, 900);
+            ctx.run(cmd, null, 900);
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("release", release);

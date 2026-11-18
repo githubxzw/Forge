@@ -39,6 +39,8 @@ public class SshDeployer implements Deployer {
 
         Map<String, Object> result = new LinkedHashMap<>();
         try (SshExecutor ssh = ctx.getSshService().connect(ctx.getEnvironment())) {
+            // 登记取消句柄：断开 SSH 会话会让进行中的上传/exec 立即失败，部署随即终止
+            ctx.registerCancel(ssh::close);
             log.line("[forge] 连接 " + ctx.conn("host") + " 成功");
             ssh.execOrThrow("mkdir -p " + releases + " " + deployDir + "/logs", log, 60);
 
