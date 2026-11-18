@@ -30,5 +30,7 @@ public class ForgeProperties {
     public Path workPath() { return Path.of(workDir); }
     public Path artifactPath() { return Path.of(artifactDir); }
     public Path logPath() { return Path.of(logDir); }
+    /** 共享构建缓存目录（npm/maven/gradle 依赖缓存） */
+    public Path cachePath() { return Path.of(dataDir, "cache"); }
     public Duration jwtExpire() { return Duration.ofHours(jwtExpireHours); }
 }

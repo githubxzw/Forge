@@ -45,6 +45,7 @@ public class BuildService {
     private final com.forge.config.ForgeProperties props;
     private final SettingService settingService;
     private final CredentialService credentialService;
+    private final com.forge.setting.NotifyService notifyService;
     private final Map<BuildTarget, Builder> builders;
     private final ThreadPoolExecutor buildExecutor;
 
@@ -59,6 +60,7 @@ public class BuildService {
                         com.forge.config.ForgeProperties props,
                         SettingService settingService,
                         CredentialService credentialService,
+                        com.forge.setting.NotifyService notifyService,
                         List<Builder> builderList,
                         @Qualifier("buildExecutor") ThreadPoolExecutor buildExecutor) {
         this.buildTaskRepository = buildTaskRepository;
@@ -70,6 +72,7 @@ public class BuildService {
         this.props = props;
         this.settingService = settingService;
         this.credentialService = credentialService;
+        this.notifyService = notifyService;
         this.builders = new EnumMap<>(BuildTarget.class);
         builderList.forEach(b -> builders.put(b.target(), b));
         this.buildExecutor = buildExecutor;
@@ -112,7 +115,17 @@ public class BuildService {
         String taskId = task.getId();
         String branchF = branch;
         List<BuildTarget> targetsF = parsed;
-        buildExecutor.submit(() -> execute(taskId, projectId, branchF, targetsF));
+        try {
+            buildExecutor.submit(() -> execute(taskId, projectId, branchF, targetsF));
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // 队列满（500 深）不处理的话任务会永远卡在 PENDING，直到重启被兜底标 FAILED
+            task.setStatus(TaskStatus.FAILED);
+            task.setMessage("构建队列已满，请稍后重试");
+            task.setFinishedAt(LocalDateTime.now());
+            buildTaskRepository.save(task);
+            logStreamService.finish("build:" + taskId);
+            throw new ApiException("构建队列已满，请稍后重试");
+        }
         return task;
     }
 
@@ -144,8 +157,10 @@ public class BuildService {
                     : credentialService.require(project.getGitCredentialId());
             try (GitAuth gitAuth = gitCred == null ? GitAuth.NONE
                     : GitAuth.of(gitCred.getKind(), credentialService.data(gitCred), project.getRepoUrl())) {
+                boolean shallow = !"false".equalsIgnoreCase(settingService.get("gitShallow"));
                 String commit = gitClient.ensureRepo(project.getRepoUrl(), branch, src, sink,
-                        p -> taskRegistry.register(taskId, (java.io.Closeable) () -> ProcessRunner.killTree(p)), gitAuth);
+                        p -> taskRegistry.register(taskId, (java.io.Closeable) () -> ProcessRunner.killTree(p)),
+                        shallow, gitAuth);
                 requireNotCancelled(taskId);
                 sink.line("[forge] commit: " + commit);
 
@@ -155,7 +170,7 @@ public class BuildService {
                 task = buildTaskRepository.save(task);
 
                 BuildContext ctx = new BuildContext(project, task, workDir, branch, commit, version, sink,
-                        settingService, props.artifactPath());
+                        settingService, props.artifactPath(), props.cachePath(), h -> taskRegistry.register(taskId, h));
                 for (BuildTarget target : targets) {
                     requireNotCancelled(taskId);
                     sink.line("");
@@ -190,7 +205,26 @@ public class BuildService {
             }
             taskRegistry.unregister(taskId);
             logStreamService.finish("build:" + taskId);
+            notifyBuildResult(task);
         }
+    }
+
+    /** 构建结果通知（notifyBuild=false 可关）：发起构建后去干别的，失败被叫回来是小团队刚需 */
+    private void notifyBuildResult(BuildTask task) {
+        if (task == null || "false".equalsIgnoreCase(settingService.get("notifyBuild"))) return;
+        String status = String.valueOf(task.getStatus());
+        if (!"SUCCESS".equals(status) && !"FAILED".equals(status)) return; // CANCELLED 不打扰
+        String title = switch (status) {
+            case "SUCCESS" -> "Forge 构建成功";
+            default -> "Forge 构建失败";
+        };
+        String msg = String.format("项目：%s\n分支：%s\n版本：%s\n触发：%s%s",
+                task.getProject() == null ? "-" : task.getProject().getName(),
+                task.getBranch(),
+                task.getVersion() == null ? "-" : task.getVersion(),
+                String.valueOf(task.getTrigger()),
+                task.getMessage() == null ? "" : "\n原因：" + task.getMessage());
+        notifyService.send(title, msg);
     }
 
     private void requireNotCancelled(String taskId) {

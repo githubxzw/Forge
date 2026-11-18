@@ -25,11 +25,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -71,7 +75,7 @@ class BuildServiceExecuteTest {
         when(builder.target()).thenReturn(BuildTarget.BACKEND_JAR);
         service = new BuildService(buildTaskRepository, projectService, artifactService, gitClient,
                 logStreamService, new TaskRegistry(), props, mock(SettingService.class),
-                credentialService, List.of(builder), buildExecutor);
+                credentialService, mock(com.forge.setting.NotifyService.class), List.of(builder), buildExecutor);
     }
 
     private Project project() {
@@ -115,7 +119,7 @@ class BuildServiceExecuteTest {
         when(buildTaskRepository.findById("t1")).thenReturn(Optional.of(t));
         when(buildTaskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(projectService.require("p1")).thenReturn(p);
-        when(gitClient.ensureRepo(anyString(), anyString(), any(), any(), any(), any()))
+        when(gitClient.ensureRepo(anyString(), anyString(), any(), any(), any(), anyBoolean(), any()))
                 .thenThrow(new ApiException(500, "git 挂了"));
 
         service.execute("t1", "p1", "main", List.of(BuildTarget.BACKEND_JAR));
@@ -137,7 +141,7 @@ class BuildServiceExecuteTest {
         when(buildTaskRepository.findById("t1")).thenReturn(Optional.of(t));
         when(buildTaskRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(projectService.require("p1")).thenReturn(p);
-        when(gitClient.ensureRepo(eq("https://example.com/demo.git"), eq("main"), any(), any(), any(), any()))
+        when(gitClient.ensureRepo(eq("https://example.com/demo.git"), eq("main"), any(), any(), any(), anyBoolean(), any()))
                 .thenReturn("abc123def456");
         Artifact artifact = new Artifact();
         when(builder.build(any())).thenReturn(artifact);
@@ -152,6 +156,28 @@ class BuildServiceExecuteTest {
         verify(buildTaskRepository, atLeast(1)).save(cap.capture());
         assertEquals(TaskStatus.SUCCESS, cap.getValue().getStatus());
         assertEquals("abc123def456", cap.getValue().getCommit());
+    }
+
+    @Test
+    void startMarksTaskFailedWhenQueueFull() {
+        doThrow(new java.util.concurrent.RejectedExecutionException()).when(buildExecutor).submit(any(Runnable.class));
+        when(projectService.require("p1")).thenReturn(project());
+        when(buildTaskRepository.save(any())).thenAnswer(inv -> {
+            BuildTask t = inv.getArgument(0);
+            if (t.getId() == null) t.setId("q1");
+            return t;
+        });
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.start("p1", "main", List.of("BACKEND_JAR")));
+
+        // 旧代码：RejectedExecutionException 裸抛，任务永远卡 PENDING 直到重启兜底
+        assertTrue(ex.getMessage().contains("队列已满"), ex.getMessage());
+        ArgumentCaptor<BuildTask> cap = ArgumentCaptor.forClass(BuildTask.class);
+        verify(buildTaskRepository, atLeast(2)).save(cap.capture());
+        BuildTask last = cap.getValue();
+        assertEquals(TaskStatus.FAILED, last.getStatus());
+        assertTrue(last.getMessage().contains("队列已满"), last.getMessage());
+        assertNotNull(last.getFinishedAt());
     }
 
     @Test

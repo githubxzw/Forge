@@ -5,7 +5,6 @@ import com.forge.domain.Artifact;
 import com.forge.domain.ArtifactType;
 import com.forge.domain.BuildTarget;
 import com.forge.domain.ProjectType;
-import com.forge.infra.process.ProcessRunner;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -41,29 +40,32 @@ public class FrontendBuilder implements Builder {
             case "pnpm" -> {
                 install.add("pnpm");
                 install.add("install");
+                install.add("--store-dir=" + ctx.cacheDir("pnpm")); // 共享 store，二次构建免下载
             }
             case "yarn" -> {
                 install.add("yarn");
                 install.add("install");
+                ctx.getEnv().put("YARN_CACHE_FOLDER", ctx.cacheDir("yarn").toString());
             }
             default -> {
                 install.add("npm");
                 if (hasLock) install.add("ci");
                 else install.add("install");
+                install.add("--cache=" + ctx.cacheDir("npm")); // 共享 npm 缓存
             }
         }
         if (registry != null && !registry.isBlank() && !"https://registry.npmjs.org".equals(registry)) {
             install.add("--registry=" + registry);
         }
         try {
-            ProcessRunner.run(install, src, ctx.getEnv(), ctx.getLog(), null, 1800);
+            ctx.run(install, src, 1800);
         } catch (ApiException e) {
             // lockfile 与 package.json 不同步时 npm ci 会失败，降级 npm install 重试
             if ("npm".equals(pm) && hasLock && install.contains("ci")) {
                 ctx.getLog().line("[forge] npm ci 失败（" + e.getMessage() + "），降级为 npm install 重试");
                 List<String> fallback = new ArrayList<>(List.of("npm", "install"));
                 install.stream().filter(s -> s.startsWith("--registry=")).findFirst().ifPresent(fallback::add);
-                ProcessRunner.run(fallback, src, ctx.getEnv(), ctx.getLog(), null, 1800);
+                ctx.run(fallback, src, 1800);
             } else {
                 throw e;
             }
@@ -77,7 +79,7 @@ public class FrontendBuilder implements Builder {
         } else {
             buildCmd.addAll(List.of(pm, "run", "build"));
         }
-        ProcessRunner.run(buildCmd, src, ctx.getEnv(), ctx.getLog(), null, 3600);
+        ctx.run(buildCmd, src, 3600);
 
         // 3. 定位产物目录并打包
         String outputDir = ctx.config("outputDir");

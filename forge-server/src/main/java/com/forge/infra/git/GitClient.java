@@ -16,14 +16,18 @@ import java.util.function.Consumer;
 @Component
 public class GitClient {
 
-    /** 确保 {dir} 是指定分支的最新代码，返回当前 commit sha */
+    /** 确保 {dir} 是指定分支（或 tag 名）的最新代码，返回当前 commit sha；shallow=true 时浅克隆加速 */
     public String ensureRepo(String repoUrl, String branch, Path dir, LogSink sink,
-                             Consumer<Process> onStart, GitAuth auth) {
+                             Consumer<Process> onStart, boolean shallow, GitAuth auth) {
         GitAuth a = auth == null ? GitAuth.NONE : auth;
         try {
             if (!Files.exists(dir.resolve(".git"))) {
                 Files.createDirectories(dir.getParent());
-                run(sink, onStart, dir.getParent(), 1800, a, "git", "clone", "--branch", branch, repoUrl, dir.getFileName().toString());
+                List<String> depth = shallow ? List.of("--depth", "1") : List.of();
+                List<String> cmd = new ArrayList<>();
+                cmd.add("git"); cmd.add("clone"); cmd.addAll(depth);
+                cmd.add("--branch"); cmd.add(branch); cmd.add(repoUrl); cmd.add(dir.getFileName().toString());
+                run(sink, onStart, dir.getParent(), 1800, a, cmd.toArray(String[]::new));
             } else {
                 run(sink, onStart, dir, 600, a, "git", "fetch", "origin", "--prune");
                 run(sink, onStart, dir, 120, a, "git", "checkout", "-f", "-B", branch, "origin/" + branch);

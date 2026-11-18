@@ -4,7 +4,6 @@ import com.forge.common.ApiException;
 import com.forge.domain.Artifact;
 import com.forge.domain.ArtifactType;
 import com.forge.domain.BuildTarget;
-import com.forge.infra.process.ProcessRunner;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -46,6 +45,8 @@ public class BackendBuilder implements Builder {
                 cmd.add("mvn");
             }
             cmd.addAll(List.of("-B", "-ntp", "clean", "package", "-DskipTests"));
+            // 共享本地仓库：跨构建复用依赖，Java 项目二次构建提速数倍
+            cmd.add("-Dmaven.repo.local=" + ctx.cacheDir("maven"));
             // Maven 镜像加速：生成临时 settings.xml
             String mirror = ctx.setting("mavenMirror");
             if (mirror != null && !mirror.isBlank()) {
@@ -64,9 +65,10 @@ public class BackendBuilder implements Builder {
                 cmd.add("gradle");
             }
             cmd.addAll(List.of("bootJar", "--no-daemon", "-x", "test"));
+            ctx.getEnv().put("GRADLE_USER_HOME", ctx.cacheDir("gradle").toString()); // 共享依赖缓存
         }
         ctx.getLog().line("[forge] 后端构建开始: " + String.join(" ", cmd));
-        ProcessRunner.run(cmd, src, ctx.getEnv(), ctx.getLog(), null, 3600);
+        ctx.run(cmd, src, 3600);
 
         // 定位 jar（排除 original/sources/javadoc）
         Path jar = findJar(src).orElseThrow(() -> new ApiException("构建完成但未找到 jar 产物"));
