@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: 后端测试 (JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Maven Test
+        working-directory: forge-server
+        run: mvn -B -ntp test
+
+  frontend:
+    name: 前端构建 (Node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: forge-web/package-lock.json
+      - name: npm ci
+        working-directory: forge-web
+        run: npm ci
+      - name: Build
+        working-directory: forge-web
+        run: npm run build

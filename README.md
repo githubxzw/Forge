@@ -1,5 +1,8 @@
 # 🔨 Forge — 统一项目构建与部署管理平台
 
+[![CI](https://github.com/githubxzw/Forge/actions/workflows/ci.yml/badge.svg)](https://github.com/githubxzw/Forge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 个人/小团队使用的统一项目管理工具：**项目托管 → 构建（前端包 / 后端包 / Docker 镜像 / K8s Chart）→ 制品库 → 一键部署 → 回滚** 全链路。
 
 ```
